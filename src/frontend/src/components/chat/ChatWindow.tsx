@@ -1,11 +1,30 @@
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { Principal } from "@icp-sdk/core/principal";
@@ -14,10 +33,11 @@ import {
   ArrowLeft,
   BarChart2,
   Bold,
-  Code,
+  CalendarClock,
+  CheckSquare,
   Image,
   Images,
-  Italic,
+  Link,
   Loader2,
   Mic,
   MicOff,
@@ -26,7 +46,6 @@ import {
   Search,
   Send,
   Square,
-  Strikethrough,
   Timer,
   VolumeX,
   Zap,
@@ -45,9 +64,19 @@ import { useActor } from "../../hooks/useActor";
 import { saveUser } from "../../services/chatService";
 import {
   type Poll,
+  type Report,
+  addBookmark,
+  addReport,
+  addScheduledMessage,
   awardBadge,
+  getChatWallpaper,
+  getDueMessages,
   getPollsForChat,
   incrementMsgCount,
+  isBookmarked,
+  recordDailyActivity,
+  removeBookmark,
+  removeScheduledMessage,
   setSelfDestructTimer,
 } from "../../services/featureService";
 import { backendProfileToAppUser } from "../../services/profileService";
@@ -58,8 +87,11 @@ import { MediaGallery } from "./MediaGallery";
 import { MessageBubble } from "./MessageBubble";
 import { PollBubble } from "./PollBubble";
 import { PollModal } from "./PollModal";
+import { StickerPanel } from "./StickerPanel";
+import { TodoListPanel } from "./TodoListPanel";
 import { TypingIndicator } from "./TypingIndicator";
 import { UserAvatar } from "./UserAvatar";
+import { WallpaperPicker } from "./WallpaperPicker";
 
 interface ChatWindowProps {
   chatId: string;
@@ -85,6 +117,8 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
     toggleVanishMode,
     refreshChats,
     chatIdToOtherUid,
+    pendingChatUser,
+    pendingChatContext,
   } = useChat();
   const { currentUser } = useAuth();
   const { actor } = useActor();
@@ -113,6 +147,22 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
     null,
   ); // ms
   const [showFormattingBar, setShowFormattingBar] = useState(false);
+
+  // Batch 2 feature state
+  const [wallpaper, setWallpaper] = useState(() => getChatWallpaper(chatId));
+  const [reportingMessage, setReportingMessage] = useState<Message | null>(
+    null,
+  );
+  const [reportReason, setReportReason] = useState("Spam");
+  const [bookmarkVersion, setBookmarkVersion] = useState(0); // trigger re-render
+  const [scheduledAt, setScheduledAt] = useState("");
+  const [showSchedulePicker, setShowSchedulePicker] = useState(false);
+  // Batch 3 features
+  const [showTodoPanel, setShowTodoPanel] = useState(false);
+  const [linkPreviewUrl, setLinkPreviewUrl] = useState<string | null>(null);
+  const linkPreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -124,19 +174,38 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
 
   const currentUid = currentUser!.uid;
 
-  // Derive otherUid from chat participants
-  // Falls back to chatIdToOtherUid map (populated by openChat) before chats state settles
+  // If pendingChatContext matches this chatId, use it directly — this is the most
+  // reliable source because it's set atomically in openChat before any state settles
+  const isPendingThisChat = pendingChatContext?.chatId === chatId;
+
+  // Derive otherUid: pendingChatContext > chats state > chatIdToOtherUid map
   const otherUid = useMemo(() => {
+    if (isPendingThisChat) return pendingChatContext!.otherUid;
     const chat = chats.find((c) => c.id === chatId);
     if (chat) {
       return chat.participants.find((p) => p !== currentUid) ?? "";
     }
     // Fallback: use the map populated synchronously by openChat
     return chatIdToOtherUid[chatId] ?? "";
-  }, [chats, chatId, currentUid, chatIdToOtherUid]);
+  }, [
+    isPendingThisChat,
+    pendingChatContext,
+    chats,
+    chatId,
+    currentUid,
+    chatIdToOtherUid,
+  ]);
 
   const chat = chats.find((c) => c.id === chatId);
-  const otherUser = users[otherUid];
+  // Use pendingChatContext first, then users map, then pendingChatUser
+  const otherUser = useMemo(() => {
+    if (isPendingThisChat) return pendingChatContext!.otherUser;
+    return (
+      (otherUid ? users[otherUid] : undefined) ??
+      (pendingChatUser?.uid === otherUid ? pendingChatUser : null) ??
+      undefined
+    );
+  }, [isPendingThisChat, pendingChatContext, users, otherUid, pendingChatUser]);
   const chatMessages = allMessages[chatId] ?? [];
 
   // ─── Self-healing: fetch missing chat/user from backend ──────────────────
@@ -184,18 +253,35 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
   }, [chat, otherUser, chatId, otherUid, actor, refreshChats]);
 
   // Reset healing flag when chatId changes
-  // biome-ignore lint/correctness/useExhaustiveDependencies: chatId change should reset healing
   useEffect(() => {
     healingRef.current = false;
     setLoadingTimedOut(false);
+    setWallpaper(getChatWallpaper(chatId));
   }, [chatId]);
 
-  // Loading timeout: if chat/user still not resolved after 6s, show error + retry
+  // Scheduled message checker
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const due = getDueMessages(currentUid);
+      for (const scheduled of due) {
+        if (scheduled.chatId === chatId) {
+          sendMessage(chatId, currentUid, scheduled.text, "text", {}).catch(
+            () => {},
+          );
+          removeScheduledMessage(currentUid, scheduled.id);
+          toast.success("Scheduled message sent!");
+        }
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [chatId, currentUid, sendMessage]);
+
+  // Loading timeout: if chat/user still not resolved after 3s, show error + retry
   useEffect(() => {
     if (chat && otherUser) return; // Already resolved
     const timer = setTimeout(() => {
       setLoadingTimedOut(true);
-    }, 6000);
+    }, 3000);
     return () => clearTimeout(timer);
   }, [chat, otherUser]);
 
@@ -224,6 +310,8 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
           track.stop();
         }
       }
+      if (linkPreviewTimerRef.current)
+        clearTimeout(linkPreviewTimerRef.current);
     };
   }, []);
 
@@ -301,6 +389,8 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
           const awarded = awardBadge(currentUid, "100_messages");
           if (awarded) toast.success("🏆 Badge Earned: Chat Champion!");
         }
+        // Track daily activity for streak
+        recordDailyActivity(currentUid);
 
         // Self-destruct timer
         if (selfDestructDelay && selfDestructDelay > 0 && msg.id) {
@@ -344,10 +434,71 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
     [handleSend],
   );
 
+  // Bookmark handler
+  const handleBookmark = useCallback(
+    (msg: Message) => {
+      const uid = currentUid;
+      if (isBookmarked(uid, msg.id)) {
+        removeBookmark(uid, msg.id);
+        toast.success("Bookmark removed");
+      } else {
+        addBookmark(uid, {
+          messageId: msg.id,
+          chatId,
+          text: msg.text,
+          senderUsername: users[msg.senderId]?.username ?? msg.senderId,
+          createdAt: Date.now(),
+        });
+        toast.success("Message bookmarked");
+      }
+      setBookmarkVersion((v) => v + 1);
+    },
+    [currentUid, chatId, users],
+  );
+
+  // Schedule send handler
+  const handleScheduleSend = useCallback(() => {
+    const text = inputText.trim();
+    if (!text || !scheduledAt) return;
+    const ts = new Date(scheduledAt).getTime();
+    if (Number.isNaN(ts) || ts <= Date.now()) {
+      toast.error("Please choose a future date and time");
+      return;
+    }
+    addScheduledMessage(currentUid, {
+      id: `sched_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      chatId,
+      text,
+      scheduledAt: ts,
+    });
+    setInputText("");
+    setScheduledAt("");
+    setShowSchedulePicker(false);
+    toast.success(`Message scheduled for ${new Date(ts).toLocaleString()}`);
+  }, [inputText, scheduledAt, currentUid, chatId]);
+
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      setInputText(e.target.value);
-      setTyping(chatId, currentUid, e.target.value.length > 0);
+      const val = e.target.value;
+      setInputText(val);
+      setTyping(chatId, currentUid, val.length > 0);
+
+      // Link preview detection (debounced 600ms)
+      if (linkPreviewTimerRef.current)
+        clearTimeout(linkPreviewTimerRef.current);
+      const urlMatch = val.match(/https?:\/\/\S+/);
+      if (urlMatch) {
+        linkPreviewTimerRef.current = setTimeout(() => {
+          try {
+            const url = new URL(urlMatch[0]);
+            setLinkPreviewUrl(url.hostname);
+          } catch {
+            setLinkPreviewUrl(null);
+          }
+        }, 600);
+      } else {
+        setLinkPreviewUrl(null);
+      }
     },
     [chatId, currentUid, setTyping],
   );
@@ -669,7 +820,10 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
                 <MoreHorizontal size={17} />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="rounded-xl">
+            <DropdownMenuContent
+              align="end"
+              className="rounded-xl overflow-hidden p-0"
+            >
               <DropdownMenuItem onClick={() => togglePin(chatId, currentUid)}>
                 <Pin size={14} className="mr-2" />
                 {isPinned ? "Unpin chat" : "Pin chat"}
@@ -690,6 +844,15 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
                   ? "Turn off vanish mode"
                   : "Turn on vanish mode"}
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowTodoPanel(true)}>
+                <CheckSquare size={14} className="mr-2" />
+                Shared To-Do List
+              </DropdownMenuItem>
+              {/* Wallpaper picker embedded in dropdown */}
+              <WallpaperPicker
+                chatId={chatId}
+                onSelect={(v) => setWallpaper(v)}
+              />
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -736,7 +899,10 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto chat-scroll py-2 chat-messages-bg">
+      <div
+        className="flex-1 overflow-y-auto chat-scroll py-2 chat-messages-bg"
+        style={wallpaper ? { background: wallpaper } : undefined}
+      >
         {filteredMessages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full gap-3 py-12">
             <UserAvatar
@@ -835,6 +1001,15 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
                   setForwardingMessage(msg);
                   setShowForwardModal(true);
                 }}
+                onBookmark={() => handleBookmark(msg)}
+                isBookmarked={
+                  bookmarkVersion >= 0 && isBookmarked(currentUid, msg.id)
+                }
+                onReport={
+                  msg.senderId !== currentUid
+                    ? () => setReportingMessage(msg)
+                    : undefined
+                }
                 isLastMessage={isLastSent}
               />
             </React.Fragment>
@@ -1014,8 +1189,40 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
             </div>
           )}
 
+          {/* Link preview pill */}
+          {linkPreviewUrl && (
+            <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/50 bg-muted/30">
+              <Link size={11} className="text-primary flex-shrink-0" />
+              <span className="text-xs text-muted-foreground truncate flex-1">
+                {linkPreviewUrl}
+              </span>
+              <button
+                type="button"
+                onClick={() => setLinkPreviewUrl(null)}
+                className="text-muted-foreground hover:text-foreground text-xs"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
           <div className="flex items-end gap-1.5 sm:gap-2 px-2 sm:px-3 py-3 input-bar-mobile">
-            <EmojiPicker onEmojiSelect={(e) => setInputText((p) => p + e)} />
+            <EmojiPicker
+              onEmojiSelect={(e) => setInputText((p) => p + e)}
+              currentUid={currentUid}
+            />
+            <StickerPanel
+              onStickerSelect={(sticker) => {
+                setInputText(sticker);
+                // Auto-send sticker immediately
+                setTimeout(() => {
+                  sendMessage(chatId, currentUid, sticker, "text", {}).catch(
+                    () => {},
+                  );
+                  setInputText("");
+                }, 50);
+              }}
+            />
             <div className="flex-1 relative">
               <Input
                 ref={inputRef}
@@ -1070,6 +1277,63 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
                 <Image size={20} />
               )}
             </Button>
+            {/* Schedule message button */}
+            <Popover
+              open={showSchedulePicker}
+              onOpenChange={setShowSchedulePicker}
+            >
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-muted-foreground hover:text-primary flex-shrink-0 h-10 w-10 rounded-xl transition-colors"
+                  title="Schedule message"
+                >
+                  <CalendarClock size={18} />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="end"
+                side="top"
+                className="w-72 rounded-2xl p-4 schedule-popover"
+              >
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+                  Schedule Message
+                </p>
+                <div className="space-y-3">
+                  <div>
+                    <Label className="settings-label mb-1.5 block">
+                      Message text
+                    </Label>
+                    <Input
+                      value={inputText}
+                      onChange={(e) => setInputText(e.target.value)}
+                      placeholder="Your message..."
+                      className="rounded-xl text-sm h-8"
+                    />
+                  </div>
+                  <div>
+                    <Label className="settings-label mb-1.5 block">
+                      Send at
+                    </Label>
+                    <input
+                      type="datetime-local"
+                      value={scheduledAt}
+                      onChange={(e) => setScheduledAt(e.target.value)}
+                      className="w-full rounded-xl border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary/40"
+                    />
+                  </div>
+                  <Button
+                    size="sm"
+                    className="w-full rounded-xl gradient-btn"
+                    onClick={handleScheduleSend}
+                    disabled={!inputText.trim() || !scheduledAt}
+                  >
+                    <span className="text-white text-xs">Schedule</span>
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
             {inputText.trim() ? (
               <Button
                 size="icon"
@@ -1133,6 +1397,72 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
         messages={chatMessages}
         onClose={() => setShowMediaGallery(false)}
       />
+
+      {/* Todo panel */}
+      {showTodoPanel && (
+        <TodoListPanel
+          chatId={chatId}
+          currentUid={currentUid}
+          onClose={() => setShowTodoPanel(false)}
+        />
+      )}
+
+      {/* Report modal */}
+      <Dialog
+        open={!!reportingMessage}
+        onOpenChange={(open) => !open && setReportingMessage(null)}
+      >
+        <DialogContent className="rounded-2xl max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base">Report Message</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Why are you reporting this message?
+            </p>
+            <Select value={reportReason} onValueChange={setReportReason}>
+              <SelectTrigger className="rounded-xl">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl">
+                {["Spam", "Harassment", "Inappropriate", "Other"].map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {r}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1 rounded-xl"
+                onClick={() => setReportingMessage(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 rounded-xl gradient-btn"
+                onClick={() => {
+                  if (!reportingMessage) return;
+                  const report: Report = {
+                    id: `report_${Date.now()}`,
+                    messageId: reportingMessage.id,
+                    chatId,
+                    reason: reportReason,
+                    reportedBy: currentUid,
+                    createdAt: Date.now(),
+                  };
+                  addReport(currentUid, report);
+                  setReportingMessage(null);
+                  toast.success("Message reported. Thank you.");
+                }}
+              >
+                <span className="text-white text-sm">Submit Report</span>
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

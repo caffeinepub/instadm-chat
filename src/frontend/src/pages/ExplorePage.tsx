@@ -3,14 +3,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft,
   Compass,
+  Crown,
+  Flame,
   Hash,
   Loader2,
+  Medal,
   Search,
   TrendingUp,
+  Trophy,
   UserCheck,
   UserPlus,
 } from "lucide-react";
@@ -20,9 +25,12 @@ import { useAuth } from "../contexts/AuthContext";
 import { useChat } from "../contexts/ChatContext";
 import { useActor } from "../hooks/useActor";
 import {
+  ALL_BADGES,
   type Post,
   awardBadge,
-  extractHashtags,
+  getActivityStreak,
+  getBadges,
+  getMsgCount,
   getPosts,
 } from "../services/featureService";
 import type { AppUser } from "../types";
@@ -166,7 +174,6 @@ export function ExplorePage() {
       } else {
         await followUser(user.uid);
         toast.success(`Following @${user.username}`);
-        // Update local list
         setAllUsers((prev) =>
           prev.map((u) =>
             u.uid === user.uid
@@ -222,6 +229,106 @@ export function ExplorePage() {
     }
   };
 
+  // Leaderboard data
+  const leaderboard = [...allUsers]
+    .map((u) => ({
+      user: u,
+      msgCount: getMsgCount(u.uid),
+      streak: getActivityStreak(u.uid),
+      badges: getBadges(u.uid),
+    }))
+    .sort((a, b) => b.msgCount - a.msgCount)
+    .slice(0, 10);
+
+  // Recommended friends: users with mutual followers
+  const recommended = allUsers
+    .filter((u) => {
+      if (!currentUser) return false;
+      const isFollowing = u.followers.includes(currentUser.uid);
+      if (isFollowing) return false;
+      // Mutual followers: people who follow both me and them
+      const mutuals = u.followers.filter((uid) =>
+        currentUser.following?.includes(uid),
+      );
+      return mutuals.length > 0;
+    })
+    .slice(0, 10);
+
+  const suggestedFallback = allUsers
+    .filter((u) => !currentUser?.following?.includes(u.uid))
+    .slice(0, 10);
+
+  const forYouUsers = recommended.length > 0 ? recommended : suggestedFallback;
+
+  const getRankIcon = (rank: number) => {
+    if (rank === 0) return <Crown size={14} className="text-yellow-400" />;
+    if (rank === 1) return <Medal size={14} className="text-slate-400" />;
+    if (rank === 2) return <Medal size={14} className="text-amber-600" />;
+    return (
+      <span className="text-xs font-bold text-muted-foreground w-3.5 text-center">
+        {rank + 1}
+      </span>
+    );
+  };
+
+  const UserCard = ({ user }: { user: AppUser }) => {
+    const isFollowing = currentUser && user.followers.includes(currentUser.uid);
+    const loading = followLoading[user.uid];
+    return (
+      <div className="flex items-center gap-3 p-3 rounded-xl hover:bg-accent/50 transition-colors">
+        <Avatar className="w-10 h-10 flex-shrink-0">
+          <AvatarImage src={user.profilePicture} />
+          <AvatarFallback className="bg-primary/10 text-primary text-sm font-bold">
+            {user.username.slice(0, 2).toUpperCase()}
+          </AvatarFallback>
+        </Avatar>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <p className="text-sm font-semibold truncate">@{user.username}</p>
+            {user.isPrivate && (
+              <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4">
+                Private
+              </Badge>
+            )}
+            {user.onlineStatus && (
+              <span className="w-2 h-2 rounded-full bg-online-dot flex-shrink-0" />
+            )}
+          </div>
+          {user.bio && (
+            <p className="text-xs text-muted-foreground truncate mt-0.5">
+              {user.bio}
+            </p>
+          )}
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            {user.followers.length} followers
+          </p>
+        </div>
+        <Button
+          size="sm"
+          variant={isFollowing ? "outline" : "default"}
+          className={`h-8 px-3 rounded-xl text-xs flex-shrink-0 ${!isFollowing ? "gradient-btn" : ""}`}
+          onClick={() =>
+            isFollowing ? handleUnfollow(user) : handleFollow(user)
+          }
+          disabled={loading}
+        >
+          {loading ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : isFollowing ? (
+            <>
+              <UserCheck size={12} className="mr-1" />
+              Following
+            </>
+          ) : (
+            <span className={!isFollowing ? "text-white" : ""}>
+              {user.isPrivate ? "Request" : "Follow"}
+            </span>
+          )}
+        </Button>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-dvh bg-background page-fade overflow-y-auto">
       {/* Header */}
@@ -262,161 +369,227 @@ export function ExplorePage() {
           </div>
         </div>
 
-        {/* Trending Hashtags */}
-        {trendingHashtags.length > 0 && (
-          <div className="mb-4">
-            <div className="flex items-center gap-2 mb-3">
-              <TrendingUp size={15} className="text-primary" />
-              <h2 className="text-sm font-bold">Trending</h2>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {trendingHashtags.map(({ tag, count }) => (
-                <button
-                  type="button"
-                  key={tag}
-                  onClick={() => handleHashtagClick(tag)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
-                    selectedHashtag === tag
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-muted/50 border-border/50 hover:bg-accent text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <Hash size={11} />
-                  {tag.replace("#", "")}
-                  <span className="opacity-60">{count}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Tabs */}
+        <Tabs defaultValue="discover">
+          <TabsList className="w-full rounded-xl mb-4 bg-muted/50">
+            <TabsTrigger value="discover" className="flex-1 rounded-lg text-xs">
+              <Compass size={13} className="mr-1.5" />
+              Discover
+            </TabsTrigger>
+            <TabsTrigger value="for-you" className="flex-1 rounded-lg text-xs">
+              <UserPlus size={13} className="mr-1.5" />
+              For You
+            </TabsTrigger>
+            <TabsTrigger
+              value="leaderboard"
+              className="flex-1 rounded-lg text-xs"
+            >
+              <Trophy size={13} className="mr-1.5" />
+              Top
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Filtered posts by hashtag */}
-        {selectedHashtag && (
-          <div className="mb-4 space-y-2">
-            <h3 className="text-sm font-semibold text-muted-foreground">
-              Posts with {selectedHashtag}
-            </h3>
-            {filteredPosts.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">
-                No posts with this hashtag yet
-              </p>
-            ) : (
-              filteredPosts.map((post) => (
-                <div
-                  key={post.id}
-                  className="bg-card border border-border rounded-xl p-3"
-                >
-                  <p className="text-xs font-semibold text-primary mb-1">
-                    @{post.authorUsername}
+          {/* Discover tab */}
+          <TabsContent value="discover">
+            {/* Trending Hashtags */}
+            {trendingHashtags.length > 0 && (
+              <div className="mb-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <TrendingUp size={15} className="text-primary" />
+                  <h2 className="text-sm font-bold">Trending</h2>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {trendingHashtags.map(({ tag, count }) => (
+                    <button
+                      type="button"
+                      key={tag}
+                      onClick={() => handleHashtagClick(tag)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
+                        selectedHashtag === tag
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-muted/50 border-border/50 hover:bg-accent text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Hash size={11} />
+                      {tag.replace("#", "")}
+                      <span className="opacity-60">{count}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {selectedHashtag && (
+              <div className="mb-4 space-y-2">
+                <h3 className="text-sm font-semibold text-muted-foreground">
+                  Posts with {selectedHashtag}
+                </h3>
+                {filteredPosts.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-4 text-center">
+                    No posts with this hashtag yet
                   </p>
-                  <p className="text-sm">
-                    {post.text.slice(0, 120)}
-                    {post.text.length > 120 ? "…" : ""}
+                ) : (
+                  filteredPosts.map((post) => (
+                    <div
+                      key={post.id}
+                      className="bg-card border border-border rounded-xl p-3"
+                    >
+                      <p className="text-xs font-semibold text-primary mb-1">
+                        @{post.authorUsername}
+                      </p>
+                      <p className="text-sm">
+                        {post.text.slice(0, 120)}
+                        {post.text.length > 120 ? "…" : ""}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* People section */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <UserPlus size={15} className="text-primary" />
+                <h2 className="text-sm font-bold">People</h2>
+                {!isLoading && (
+                  <span className="text-xs text-muted-foreground ml-auto">
+                    {filteredUsers.length} users
+                  </span>
+                )}
+              </div>
+
+              {isLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 size={20} className="animate-spin text-primary" />
+                </div>
+              ) : filteredUsers.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-sm text-muted-foreground">
+                    No users found
                   </p>
                 </div>
-              ))
-            )}
-          </div>
-        )}
-
-        {/* People to follow */}
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <UserPlus size={15} className="text-primary" />
-            <h2 className="text-sm font-bold">People</h2>
-            {!isLoading && (
-              <span className="text-xs text-muted-foreground ml-auto">
-                {filteredUsers.length} users
-              </span>
-            )}
-          </div>
-
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 size={20} className="animate-spin text-primary" />
+              ) : (
+                <ScrollArea>
+                  <div className="space-y-1">
+                    {filteredUsers.map((user) => (
+                      <UserCard key={user.uid} user={user} />
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
             </div>
-          ) : filteredUsers.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-sm text-muted-foreground">No users found</p>
-            </div>
-          ) : (
-            <ScrollArea>
-              <div className="space-y-1">
-                {filteredUsers.map((user) => {
-                  const isFollowing =
-                    currentUser && user.followers.includes(currentUser.uid);
-                  const loading = followLoading[user.uid];
+          </TabsContent>
 
-                  return (
-                    <div
-                      key={user.uid}
-                      className="flex items-center gap-3 p-3 rounded-xl hover:bg-accent/50 transition-colors"
-                    >
-                      <Avatar className="w-10 h-10 flex-shrink-0">
-                        <AvatarImage src={user.profilePicture} />
-                        <AvatarFallback className="bg-primary/10 text-primary text-sm font-bold">
-                          {user.username.slice(0, 2).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <p className="text-sm font-semibold truncate">
-                            @{user.username}
-                          </p>
-                          {user.isPrivate && (
-                            <Badge
-                              variant="outline"
-                              className="text-[9px] px-1.5 py-0 h-4"
-                            >
-                              Private
-                            </Badge>
-                          )}
-                          {user.onlineStatus && (
-                            <span className="w-2 h-2 rounded-full bg-online-dot flex-shrink-0" />
-                          )}
-                        </div>
-                        {user.bio && (
-                          <p className="text-xs text-muted-foreground truncate mt-0.5">
-                            {user.bio}
-                          </p>
-                        )}
-                        <p className="text-[10px] text-muted-foreground mt-0.5">
-                          {user.followers.length} followers
-                        </p>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant={isFollowing ? "outline" : "default"}
-                        className={`h-8 px-3 rounded-xl text-xs flex-shrink-0 ${!isFollowing ? "gradient-btn" : ""}`}
-                        onClick={() =>
-                          isFollowing
-                            ? handleUnfollow(user)
-                            : handleFollow(user)
-                        }
-                        disabled={loading}
-                      >
-                        {loading ? (
-                          <Loader2 size={12} className="animate-spin" />
-                        ) : isFollowing ? (
-                          <>
-                            <UserCheck size={12} className="mr-1" />
-                            Following
-                          </>
-                        ) : (
-                          <>
-                            <span className={!isFollowing ? "text-white" : ""}>
-                              {user.isPrivate ? "Request" : "Follow"}
-                            </span>
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  );
-                })}
+          {/* For You tab */}
+          <TabsContent value="for-you">
+            <div className="mb-3">
+              <div className="flex items-center gap-2 mb-3">
+                <UserPlus size={15} className="text-primary" />
+                <h2 className="text-sm font-bold">Recommended for You</h2>
               </div>
-            </ScrollArea>
-          )}
-        </div>
+              {isLoading ? (
+                <div className="flex items-center justify-center py-10">
+                  <Loader2 size={20} className="animate-spin text-primary" />
+                </div>
+              ) : forYouUsers.length === 0 ? (
+                <div className="text-center py-10">
+                  <p className="text-sm text-muted-foreground">
+                    No recommendations yet
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Follow more people to get personalized suggestions
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {forYouUsers.map((user) => (
+                    <UserCard key={user.uid} user={user} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </TabsContent>
+
+          {/* Leaderboard tab */}
+          <TabsContent value="leaderboard">
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Trophy size={15} className="text-primary" />
+                <h2 className="text-sm font-bold">Top Users</h2>
+                <span className="text-xs text-muted-foreground ml-auto">
+                  by messages
+                </span>
+              </div>
+              {leaderboard.length === 0 ? (
+                <div className="text-center py-10">
+                  <p className="text-sm text-muted-foreground">
+                    No leaderboard data yet
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {leaderboard.map(
+                    ({ user, msgCount, streak, badges }, idx) => (
+                      <div
+                        key={user.uid}
+                        className={`flex items-center gap-3 p-3 rounded-xl border ${
+                          idx === 0
+                            ? "bg-yellow-500/5 border-yellow-400/30"
+                            : idx === 1
+                              ? "bg-slate-400/5 border-slate-400/20"
+                              : idx === 2
+                                ? "bg-amber-600/5 border-amber-600/20"
+                                : "border-border/50 bg-card/50"
+                        }`}
+                      >
+                        <div className="w-6 flex items-center justify-center flex-shrink-0">
+                          {getRankIcon(idx)}
+                        </div>
+                        <Avatar className="w-9 h-9 flex-shrink-0">
+                          <AvatarImage src={user.profilePicture} />
+                          <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">
+                            {user.username.slice(0, 2).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-sm font-semibold truncate">
+                              @{user.username}
+                            </p>
+                            {badges.slice(0, 2).map((b) => {
+                              const info = ALL_BADGES.find((x) => x.id === b);
+                              return info ? (
+                                <span
+                                  key={b}
+                                  title={info.name}
+                                  className="text-sm"
+                                >
+                                  {info.icon}
+                                </span>
+                              ) : null;
+                            })}
+                          </div>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-xs text-muted-foreground">
+                              {msgCount} msgs
+                            </span>
+                            {streak > 0 && (
+                              <span className="flex items-center gap-0.5 text-xs text-orange-500">
+                                <Flame size={10} />
+                                {streak}d streak
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ),
+                  )}
+                </div>
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
 
       {/* Footer */}

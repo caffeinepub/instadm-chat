@@ -16,6 +16,7 @@ import {
   MessageSquareDashed,
   Settings,
   User,
+  Users2,
 } from "lucide-react";
 import type React from "react";
 import { useEffect, useState } from "react";
@@ -117,6 +118,11 @@ export function HomePage() {
       icon: <Bell size={22} />,
       label: "Notifications",
       action: () => navigate({ to: "/notifications" }),
+    },
+    {
+      icon: <Users2 size={22} />,
+      label: "Rooms",
+      action: () => navigate({ to: "/rooms" }),
     },
     {
       icon: <Archive size={22} />,

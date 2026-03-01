@@ -24,6 +24,7 @@ import {
   BellOff,
   Calendar,
   ChevronRight,
+  Clock,
   Globe,
   Link2,
   Loader2,
@@ -31,13 +32,18 @@ import {
   LogOut,
   MessageSquare,
   Moon,
+  Palette,
   Phone,
+  Plus,
   Save,
   Shield,
+  Smile,
   Sun,
+  TextCursor,
   Trash2,
   User,
   UserX,
+  X,
   Zap,
 } from "lucide-react";
 import type React from "react";
@@ -47,7 +53,26 @@ import { UserAvatar } from "../components/chat/UserAvatar";
 import { useAuth } from "../contexts/AuthContext";
 import { useChat } from "../contexts/ChatContext";
 import { useTheme } from "../contexts/ThemeContext";
-import { type MoodOption, getMood, setMood } from "../services/featureService";
+import {
+  ACCENT_COLORS,
+  type MoodOption,
+  applyAccentColor,
+  applyBubbleStyle,
+  applyFontSize,
+  formatScreenTime,
+  getAccentColor,
+  getBubbleStyle,
+  getCustomReactions,
+  getFontSize,
+  getMood,
+  getTodayScreenTime,
+  getWeekScreenTime,
+  saveCustomReactions,
+  setAccentColorPref,
+  setBubbleStylePref,
+  setFontSizePref,
+  setMood,
+} from "../services/featureService";
 
 export function SettingsPage() {
   const navigate = useNavigate();
@@ -83,6 +108,30 @@ export function SettingsPage() {
   const [currentMood, setCurrentMoodState] = useState<MoodOption>(() =>
     currentUser ? getMood(currentUser.uid) : "",
   );
+
+  // Appearance prefs
+  const [fontSize, setFontSizeState] = useState(() => getFontSize());
+  const [bubbleStyle, setBubbleStyleState] = useState(() => getBubbleStyle());
+  const [accentColor, setAccentColorState] = useState(() => getAccentColor());
+  const todayTime = getTodayScreenTime();
+  const weekTime = getWeekScreenTime();
+
+  const handleFontSizeChange = (size: "small" | "medium" | "large") => {
+    setFontSizeState(size);
+    setFontSizePref(size);
+    applyFontSize();
+  };
+  const handleBubbleStyleChange = (style: "classic" | "sharp" | "round") => {
+    setBubbleStyleState(style);
+    setBubbleStylePref(style);
+    applyBubbleStyle();
+  };
+  const handleAccentColorChange = (oklch: string) => {
+    setAccentColorState(oklch);
+    setAccentColorPref(oklch);
+    applyAccentColor();
+  };
+
   const MOOD_OPTIONS: MoodOption[] = [
     "🟢 Available",
     "🔴 Busy",
@@ -97,6 +146,37 @@ export function SettingsPage() {
     if (!currentUser) return;
     setMood(currentUser.uid, mood);
     setCurrentMoodState(mood);
+  };
+
+  // Custom reactions
+  const [customReactions, setCustomReactionsState] = useState<string[]>(() =>
+    currentUser ? getCustomReactions(currentUser.uid) : [],
+  );
+  const [newCustomEmoji, setNewCustomEmoji] = useState("");
+
+  const handleAddCustomReaction = () => {
+    if (!currentUser || !newCustomEmoji.trim()) return;
+    const emoji = newCustomEmoji.trim();
+    if (customReactions.includes(emoji)) {
+      toast.error("Emoji already added");
+      return;
+    }
+    if (customReactions.length >= 5) {
+      toast.error("Maximum 5 custom reactions allowed");
+      return;
+    }
+    const updated = [...customReactions, emoji];
+    saveCustomReactions(currentUser.uid, updated);
+    setCustomReactionsState(updated);
+    setNewCustomEmoji("");
+    toast.success("Custom reaction added");
+  };
+
+  const handleRemoveCustomReaction = (emoji: string) => {
+    if (!currentUser) return;
+    const updated = customReactions.filter((e) => e !== emoji);
+    saveCustomReactions(currentUser.uid, updated);
+    setCustomReactionsState(updated);
   };
 
   const blockedUsers = Object.values(users).filter((u) =>
@@ -399,6 +479,123 @@ export function SettingsPage() {
 
         <Separator />
 
+        {/* Theme — Accent Color */}
+        <SettingSection
+          title="Theme"
+          icon={<Palette size={13} />}
+          description="Customize app accent color"
+        >
+          <div className="px-5 pb-4 space-y-4">
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground mb-2">
+                Accent Color
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {ACCENT_COLORS.map((ac) => (
+                  <button
+                    key={ac.oklch}
+                    type="button"
+                    title={ac.name}
+                    onClick={() => handleAccentColorChange(ac.oklch)}
+                    className={`accent-swatch ${accentColor === ac.oklch ? "selected" : ""}`}
+                    style={{
+                      background: `oklch(${ac.oklch})`,
+                      color: `oklch(${ac.oklch})`,
+                    }}
+                  />
+                ))}
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1.5">
+                Current:{" "}
+                <span
+                  className="font-semibold"
+                  style={{ color: `oklch(${accentColor})` }}
+                >
+                  {ACCENT_COLORS.find((c) => c.oklch === accentColor)?.name ??
+                    "Custom"}
+                </span>
+              </p>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground mb-2">
+                Font Size
+              </p>
+              <div className="flex gap-2">
+                {(["small", "medium", "large"] as const).map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => handleFontSizeChange(size)}
+                    className={`flex-1 py-2 rounded-xl text-xs font-medium border transition-all capitalize ${
+                      fontSize === size
+                        ? "bg-primary/10 border-primary text-primary"
+                        : "border-border text-muted-foreground hover:border-primary/40"
+                    }`}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground mb-2">
+                Chat Bubble Style
+              </p>
+              <div className="flex gap-2">
+                {(["classic", "sharp", "round"] as const).map((style) => (
+                  <button
+                    key={style}
+                    type="button"
+                    onClick={() => handleBubbleStyleChange(style)}
+                    className={`flex-1 py-2 rounded-xl text-xs font-medium border transition-all capitalize ${
+                      bubbleStyle === style
+                        ? "bg-primary/10 border-primary text-primary"
+                        : "border-border text-muted-foreground hover:border-primary/40"
+                    }`}
+                  >
+                    {style}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </SettingSection>
+
+        <Separator />
+
+        {/* Screen Time */}
+        <SettingSection
+          title="Screen Time"
+          icon={<Clock size={13} />}
+          description="Track your time spent on Linkr"
+        >
+          <div className="px-5 pb-4">
+            <div className="flex rounded-xl bg-muted/30 border border-border overflow-hidden">
+              <div className="flex-1 flex flex-col items-center py-4">
+                <span className="text-xl font-bold tabular-nums text-primary">
+                  {formatScreenTime(todayTime)}
+                </span>
+                <span className="text-[10px] text-muted-foreground font-medium mt-0.5">
+                  Today
+                </span>
+              </div>
+              <div className="w-px bg-border" />
+              <div className="flex-1 flex flex-col items-center py-4">
+                <span className="text-xl font-bold tabular-nums text-primary">
+                  {formatScreenTime(weekTime)}
+                </span>
+                <span className="text-[10px] text-muted-foreground font-medium mt-0.5">
+                  This week
+                </span>
+              </div>
+            </div>
+          </div>
+        </SettingSection>
+
+        <Separator />
+
         {/* Status / Mood */}
         <SettingSection
           title="Status / Mood"
@@ -528,6 +725,63 @@ export function SettingsPage() {
             </SettingSection>
           </>
         )}
+
+        <Separator />
+
+        {/* Custom Reactions */}
+        <SettingSection
+          title="Custom Reactions"
+          icon={<Smile size={13} />}
+          description="Add up to 5 custom emoji for quick reactions"
+        >
+          <div className="px-5 pb-4 pt-1 space-y-3">
+            <div className="flex flex-wrap gap-2">
+              {customReactions.map((emoji) => (
+                <div
+                  key={emoji}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-muted/70 border border-border/60 group"
+                >
+                  <span className="text-lg">{emoji}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveCustomReaction(emoji)}
+                    className="text-muted-foreground hover:text-destructive ml-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X size={10} />
+                  </button>
+                </div>
+              ))}
+              {customReactions.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  No custom reactions yet
+                </p>
+              )}
+            </div>
+            {customReactions.length < 5 && (
+              <div className="flex items-center gap-2">
+                <Input
+                  value={newCustomEmoji}
+                  onChange={(e) => setNewCustomEmoji(e.target.value)}
+                  onKeyDown={(e) =>
+                    e.key === "Enter" && handleAddCustomReaction()
+                  }
+                  placeholder="Paste emoji here..."
+                  className="flex-1 rounded-xl h-9 text-sm"
+                  maxLength={4}
+                />
+                <Button
+                  size="sm"
+                  className="rounded-xl h-9 px-3 gradient-btn gap-1.5"
+                  onClick={handleAddCustomReaction}
+                  disabled={!newCustomEmoji.trim()}
+                >
+                  <Plus size={13} className="text-white" />
+                  <span className="text-white text-xs">Add</span>
+                </Button>
+              </div>
+            )}
+          </div>
+        </SettingSection>
 
         <Separator />
 

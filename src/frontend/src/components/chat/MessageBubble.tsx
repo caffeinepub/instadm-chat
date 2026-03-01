@@ -3,7 +3,9 @@ import { Check, CheckCheck, FileText, Pause, Play } from "lucide-react";
 import type React from "react";
 import { useCallback, useRef, useState } from "react";
 import type { AppUser, Message } from "../../types";
+import { LinkPreviewCard, extractUrls } from "./LinkPreviewCard";
 import { MessageContextMenu } from "./MessageContextMenu";
+import { STICKER_PREFIX } from "./StickerPanel";
 
 interface MessageBubbleProps {
   message: Message;
@@ -18,6 +20,9 @@ interface MessageBubbleProps {
   onDeleteForMe: () => void;
   onDeleteForEveryone?: () => void;
   onForward: () => void;
+  onBookmark?: () => void;
+  onReport?: () => void;
+  isBookmarked?: boolean;
   isLastMessage?: boolean;
 }
 
@@ -33,6 +38,9 @@ export function MessageBubble({
   onDeleteForMe,
   onDeleteForEveryone,
   onForward,
+  onBookmark,
+  onReport,
+  isBookmarked = false,
   isLastMessage = false,
 }: MessageBubbleProps) {
   const [contextMenu, setContextMenu] = useState<{
@@ -207,12 +215,15 @@ export function MessageBubble({
           y={contextMenu.y}
           isSender={isSender}
           isOptimistic={message.id.startsWith("optimistic_")}
+          isBookmarked={isBookmarked}
           onReact={onReact}
           onReply={onReply}
           onEdit={onEdit}
           onDeleteForMe={onDeleteForMe}
           onDeleteForEveryone={isSender ? onDeleteForEveryone : undefined}
           onForward={onForward}
+          onBookmark={onBookmark}
+          onReport={!isSender ? onReport : undefined}
           onClose={() => setContextMenu(null)}
         />
       )}
@@ -442,11 +453,24 @@ function BubbleContent({
         </div>
       );
 
-    default:
+    default: {
+      // Sticker detection
+      if (message.text.startsWith(STICKER_PREFIX)) {
+        const emoji = message.text.slice(STICKER_PREFIX.length);
+        return <div className="sticker-message px-3 py-1">{emoji}</div>;
+      }
+      // Link preview
+      const urls = extractUrls(message.text);
       return (
-        <p className="px-4 py-2.5 text-sm leading-relaxed">
-          {renderFormattedText(message.text)}
-        </p>
+        <div className="px-4 py-2.5">
+          <p className="text-sm leading-relaxed">
+            {renderFormattedText(message.text)}
+          </p>
+          {urls.map((url) => (
+            <LinkPreviewCard key={url} url={url} isSender={isSender} />
+          ))}
+        </div>
       );
+    }
   }
 }

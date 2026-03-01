@@ -7,22 +7,41 @@ import {
   createRouter,
   redirect,
 } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { toast } from "sonner";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ChatProvider } from "./contexts/ChatContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { ArchivePage } from "./pages/ArchivePage";
+import { BookmarksPage } from "./pages/BookmarksPage";
 import { ExplorePage } from "./pages/ExplorePage";
 import { FeedPage } from "./pages/FeedPage";
 import { HomePage } from "./pages/HomePage";
+import { JoinGroupPage } from "./pages/JoinGroupPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MessageRequestsPage } from "./pages/MessageRequestsPage";
+import { NotesPage } from "./pages/NotesPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { ProfilePage } from "./pages/ProfilePage";
+import { PublicRoomsPage } from "./pages/PublicRoomsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { UsernameSetupPage } from "./pages/UsernameSetupPage";
+import {
+  applyAccentColor,
+  applyBubbleStyle,
+  applyFontSize,
+  checkBirthdayNotifications,
+} from "./services/featureService";
 
 // ─── Root layout with providers ──────────────────────────────────────────────
 function RootLayout() {
+  // Apply persisted preferences on mount
+  useEffect(() => {
+    applyAccentColor();
+    applyFontSize();
+    applyBubbleStyle();
+  }, []);
+
   return (
     <ThemeProvider>
       <AuthProvider>
@@ -35,6 +54,24 @@ function RootLayout() {
 
 function AppRouterContent() {
   const { currentUser, isLoading, needsUsernameSetup } = useAuth();
+
+  // Birthday notifications after login — run only when uid changes (new login)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional uid-only dep
+  useEffect(() => {
+    if (!currentUser) return;
+    const followedUsers = (currentUser.following ?? []).map((id) => ({
+      uid: id,
+      username: id,
+      birthDate: undefined as string | undefined,
+    }));
+    const birthdays = checkBirthdayNotifications(
+      currentUser.uid,
+      followedUsers,
+    );
+    for (const username of birthdays) {
+      toast(`🎂 It's @${username}'s birthday today!`, { duration: 8000 });
+    }
+  }, [currentUser?.uid]);
 
   if (isLoading) {
     return (
@@ -143,6 +180,34 @@ const exploreRoute = createRoute({
   component: ExplorePage,
 });
 
+const notesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/notes",
+  beforeLoad: requireAuth,
+  component: NotesPage,
+});
+
+const bookmarksRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/bookmarks",
+  beforeLoad: requireAuth,
+  component: BookmarksPage,
+});
+
+const joinGroupRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/join/$groupId",
+  beforeLoad: requireAuth,
+  component: JoinGroupPage,
+});
+
+const roomsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/rooms",
+  beforeLoad: requireAuth,
+  component: PublicRoomsPage,
+});
+
 // ─── Router ───────────────────────────────────────────────────────────────────
 const routeTree = rootRoute.addChildren([
   loginRoute,
@@ -154,6 +219,10 @@ const routeTree = rootRoute.addChildren([
   notificationsRoute,
   feedRoute,
   exploreRoute,
+  notesRoute,
+  bookmarksRoute,
+  joinGroupRoute,
+  roomsRoute,
 ]);
 
 const router = createRouter({ routeTree });

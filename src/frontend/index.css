@@ -771,3 +771,132 @@ body.page-subpage {
     background: radial-gradient(circle at 40% 40%, oklch(0.62 0.27 345 / 0.35) 0%, transparent 70%);
   }
 }
+
+/* ─── Font size control ───────────────────────────────────────── */
+html.font-small  { font-size: 13px; }
+html.font-medium { font-size: 15px; }
+html.font-large  { font-size: 17px; }
+
+/* ─── Bubble style overrides ──────────────────────────────────── */
+html.bubble-sharp  .message-bubble { border-radius: 4px !important; }
+html.bubble-round  .message-bubble { border-radius: 24px !important; }
+html.bubble-classic .message-bubble { border-radius: 18px !important; }
+
+/* ─── Story bar ───────────────────────────────────────────────── */
+.story-ring {
+  background: linear-gradient(135deg, oklch(0.62 0.27 345), oklch(0.58 0.25 290));
+  padding: 2.5px;
+  border-radius: 9999px;
+}
+.story-ring-viewed {
+  background: oklch(var(--border));
+  padding: 2.5px;
+  border-radius: 9999px;
+}
+
+@keyframes storyProgress {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.story-progress-bar {
+  animation: storyProgress linear forwards;
+  transform-origin: left center;
+}
+
+/* ─── Story viewer overlay ────────────────────────────────────── */
+@keyframes storyFadeIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+.story-viewer-enter {
+  animation: storyFadeIn 0.2s ease-out forwards;
+}
+
+/* ─── Bookmark shimmer ────────────────────────────────────────── */
+@keyframes bookmarkPop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+.bookmark-pop {
+  animation: bookmarkPop 0.25s ease-out forwards;
+}
+
+/* ─── Verification badge ──────────────────────────────────────── */
+.verified-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  background: oklch(0.60 0.23 250);
+  border-radius: 9999px;
+  color: white;
+  flex-shrink: 0;
+}
+
+/* ─── Link preview card ───────────────────────────────────────── */
+.link-preview-card {
+  border-left: 3px solid oklch(0.60 0.23 250);
+  border-radius: 0 8px 8px 0;
+  background: oklch(var(--muted) / 0.5);
+  padding: 6px 10px;
+  margin-top: 4px;
+  font-size: 0.75rem;
+}
+
+/* ─── Sticker message (big emoji) ────────────────────────────── */
+.sticker-message {
+  font-size: 64px;
+  line-height: 1.1;
+  padding: 4px 8px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* ─── Schedule datetime picker ────────────────────────────────── */
+.schedule-popover {
+  padding: 12px;
+  border-radius: 16px;
+  background: oklch(var(--popover));
+  border: 1px solid oklch(var(--border));
+  box-shadow: 0 4px 24px oklch(0.05 0.01 270 / 0.4);
+}
+
+/* ─── Notes page ─────────────────────────────────────────────── */
+@keyframes noteFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.note-card {
+  animation: noteFadeIn 0.2s ease-out forwards;
+}
+
+/* ─── Wallpaper picker ────────────────────────────────────────── */
+.wallpaper-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  flex-shrink: 0;
+}
+.wallpaper-swatch:hover {
+  transform: scale(1.15);
+}
+.wallpaper-swatch.selected {
+  box-shadow: 0 0 0 2px white, 0 0 0 4px oklch(var(--primary));
+}
+
+/* ─── Accent color swatch ────────────────────────────────────── */
+.accent-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.accent-swatch:hover { transform: scale(1.1); }
+.accent-swatch.selected {
+  box-shadow: 0 0 0 2px oklch(var(--background)), 0 0 0 4px currentColor;
+}

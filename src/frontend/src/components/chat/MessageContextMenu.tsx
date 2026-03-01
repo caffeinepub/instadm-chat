@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { Edit2, Reply, Share2, Trash2, X } from "lucide-react";
+import { Bookmark, Edit2, Flag, Reply, Share2, Trash2, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef } from "react";
 
@@ -10,12 +10,15 @@ interface MessageContextMenuProps {
   y: number;
   isSender: boolean;
   isOptimistic?: boolean;
+  isBookmarked?: boolean;
   onReact: (emoji: string) => void;
   onReply: () => void;
   onEdit?: () => void;
   onDeleteForMe: () => void;
   onDeleteForEveryone?: () => void;
   onForward: () => void;
+  onBookmark?: () => void;
+  onReport?: () => void;
   onClose: () => void;
 }
 
@@ -24,12 +27,15 @@ export function MessageContextMenu({
   y,
   isSender,
   isOptimistic = false,
+  isBookmarked = false,
   onReact,
   onReply,
   onEdit,
   onDeleteForMe,
   onDeleteForEveryone,
   onForward,
+  onBookmark,
+  onReport,
   onClose,
 }: MessageContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -46,7 +52,7 @@ export function MessageContextMenu({
 
   // Clamp position to viewport
   const menuWidth = 200;
-  const menuHeight = 280;
+  const menuHeight = 340;
   const clampedX = Math.min(x, window.innerWidth - menuWidth - 8);
   const clampedY = Math.min(y, window.innerHeight - menuHeight - 8);
 
@@ -114,6 +120,26 @@ export function MessageContextMenu({
             label="Forward"
             onClick={() => {
               onForward();
+              onClose();
+            }}
+          />
+        )}
+        {!isOptimistic && onBookmark && (
+          <MenuAction
+            icon={<Bookmark size={14} />}
+            label={isBookmarked ? "Remove Bookmark" : "Bookmark"}
+            onClick={() => {
+              onBookmark();
+              onClose();
+            }}
+          />
+        )}
+        {!isOptimistic && !isSender && onReport && (
+          <MenuAction
+            icon={<Flag size={14} />}
+            label="Report"
+            onClick={() => {
+              onReport();
               onClose();
             }}
           />

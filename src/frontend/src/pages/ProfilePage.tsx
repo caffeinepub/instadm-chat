@@ -32,13 +32,18 @@ import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { UserAvatar } from "../components/chat/UserAvatar";
+import { VerifiedBadge } from "../components/chat/VerifiedBadge";
 import { useAuth } from "../contexts/AuthContext";
 import { useChat } from "../contexts/ChatContext";
 import {
   ALL_BADGES,
   type MoodOption,
+  type ProfileView,
   getBadges,
   getMood,
+  getProfileViews,
+  isUserVerified,
+  recordProfileView,
   setMood,
 } from "../services/featureService";
 import {
@@ -103,6 +108,21 @@ export function ProfilePage() {
   );
   const myBadges =
     isOwnProfile && currentUser ? getBadges(currentUser.uid) : [];
+
+  // Profile views
+  const [profileViews, setProfileViews] = useState<ProfileView[]>([]);
+
+  // Record profile view when visiting another user's profile
+  useEffect(() => {
+    if (!currentUser || !targetUser || isOwnProfile) return;
+    recordProfileView(currentUser.uid, currentUser.username, targetUser.uid);
+  }, [currentUser, targetUser, isOwnProfile]);
+
+  // Load own profile views
+  useEffect(() => {
+    if (!isOwnProfile || !currentUser) return;
+    setProfileViews(getProfileViews(currentUser.uid));
+  }, [isOwnProfile, currentUser]);
 
   const MOOD_OPTIONS: MoodOption[] = [
     "🟢 Available",
@@ -269,10 +289,11 @@ export function ProfilePage() {
           <ArrowLeft size={18} />
         </Button>
         <h1
-          className="font-bold text-lg flex-1 tracking-tight truncate"
+          className="font-bold text-lg flex-1 tracking-tight truncate flex items-center gap-1.5"
           style={{ fontFamily: "'Sora', sans-serif" }}
         >
           @{targetUser.username}
+          {isUserVerified(targetUser.uid) && <VerifiedBadge size={16} />}
         </h1>
         {isOwnProfile && !editing && (
           <Button
@@ -830,6 +851,47 @@ export function ProfilePage() {
                 );
               })}
             </ScrollArea>
+          </div>
+        )}
+
+        {/* Profile Views section (own profile only) */}
+        {isOwnProfile && profileViews.length > 0 && (
+          <div className="mt-6 space-y-3">
+            <Separator />
+            <div className="flex items-center gap-2">
+              <Clock size={13} className="text-muted-foreground" />
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+                Profile Views
+              </p>
+              <span className="ml-auto text-xs text-muted-foreground">
+                {profileViews.length} recent
+              </span>
+            </div>
+            <div className="space-y-1">
+              {profileViews.slice(0, 5).map((view) => (
+                <div
+                  key={`${view.viewerUid}-${view.viewedAt}`}
+                  className="flex items-center gap-3 p-2 rounded-xl hover:bg-accent/40"
+                >
+                  <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                    <span className="text-xs font-bold text-primary">
+                      {view.viewerUsername.slice(0, 1).toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">
+                      @{view.viewerUsername}
+                    </p>
+                  </div>
+                  <p className="text-xs text-muted-foreground flex-shrink-0">
+                    {new Date(view.viewedAt).toLocaleDateString([], {
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </p>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

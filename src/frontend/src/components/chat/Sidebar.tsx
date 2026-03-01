@@ -13,12 +13,14 @@ import { cn } from "@/lib/utils";
 import { useNavigate } from "@tanstack/react-router";
 import {
   Archive,
+  Bookmark,
   Check,
   CheckCheck,
   Clock,
   Edit,
   Loader2,
   MessageSquare,
+  NotebookPen,
   Pin,
   Search,
   UserPlus,
@@ -32,6 +34,7 @@ import { getMood } from "../../services/featureService";
 import { hasPendingRequest } from "../../services/followService";
 import type { AppUser, Chat, GroupChat } from "../../types";
 import { CreateGroupModal } from "./CreateGroupModal";
+import { StoryBar } from "./StoryBar";
 import { UserAvatar } from "./UserAvatar";
 
 interface SidebarProps {
@@ -210,6 +213,36 @@ export function Sidebar({ onChatSelect, onGroupSelect }: SidebarProps) {
                   variant="ghost"
                   size="icon"
                   className="w-8 h-8 rounded-xl text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
+                  onClick={() => navigate({ to: "/notes" })}
+                >
+                  <NotebookPen size={15} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">
+                Notes
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="w-8 h-8 rounded-xl text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
+                  onClick={() => navigate({ to: "/bookmarks" })}
+                >
+                  <Bookmark size={15} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">
+                Bookmarks
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="w-8 h-8 rounded-xl text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
                   onClick={() => setShowCreateGroup(true)}
                 >
                   <Users2 size={15} />
@@ -239,6 +272,9 @@ export function Sidebar({ onChatSelect, onGroupSelect }: SidebarProps) {
           </TooltipProvider>
         </div>
       </div>
+
+      {/* Story bar */}
+      <StoryBar />
 
       {/* Search */}
       <div className="px-4 pb-3">

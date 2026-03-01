@@ -14,6 +14,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import {
@@ -43,6 +50,8 @@ import { useChat } from "../../contexts/ChatContext";
 import {
   type GroupRole,
   type Poll,
+  type Report,
+  addReport,
   awardBadge,
   getAnnouncements,
   getGroupRoles,
@@ -100,6 +109,10 @@ export function GroupChatWindow({ group, onBack }: GroupChatWindowProps) {
   const [announcements, setAnnouncements] = useState<string[]>([]);
   const [dismissedAnnouncement, setDismissedAnnouncement] = useState(false);
   const [groupRoles, setGroupRoles] = useState<Record<string, GroupRole>>({});
+  const [reportingMessage, setReportingMessage] = useState<
+    (typeof groupMsgs)[0] | null
+  >(null);
+  const [reportReason, setReportReason] = useState("Spam");
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -657,6 +670,11 @@ export function GroupChatWindow({ group, onBack }: GroupChatWindowProps) {
                           : undefined
                       }
                       onForward={() => {}}
+                      onReport={
+                        msg.senderId !== currentUid
+                          ? () => setReportingMessage(msg)
+                          : undefined
+                      }
                       isLastMessage={isLastSent}
                     />
                     {/* Thread indicator */}
@@ -953,6 +971,66 @@ export function GroupChatWindow({ group, onBack }: GroupChatWindowProps) {
               setAnnouncements(getAnnouncements(group.id));
             }}
           />
+
+          {/* Report Modal */}
+          <Dialog
+            open={!!reportingMessage}
+            onOpenChange={(open) => !open && setReportingMessage(null)}
+          >
+            <DialogContent className="rounded-2xl max-w-sm">
+              <DialogHeader>
+                <DialogTitle className="text-base">Report Message</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 pt-2">
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Why are you reporting this message?
+                </p>
+                <Select value={reportReason} onValueChange={setReportReason}>
+                  <SelectTrigger className="rounded-xl">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    {["Spam", "Harassment", "Inappropriate", "Other"].map(
+                      (r) => (
+                        <SelectItem key={r} value={r}>
+                          {r}
+                        </SelectItem>
+                      ),
+                    )}
+                  </SelectContent>
+                </Select>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="flex-1 py-2 rounded-xl border border-border text-sm hover:bg-accent transition-colors"
+                    onClick={() => setReportingMessage(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="flex-1 py-2 rounded-xl gradient-btn text-white text-sm"
+                    onClick={() => {
+                      if (!reportingMessage) return;
+                      const report: Report = {
+                        id: `report_${Date.now()}`,
+                        messageId: reportingMessage.id,
+                        chatId: group.id,
+                        reason: reportReason,
+                        reportedBy: currentUid,
+                        createdAt: Date.now(),
+                      };
+                      addReport(currentUid, report);
+                      setReportingMessage(null);
+                      toast.success("Message reported. Thank you.");
+                    }}
+                  >
+                    Submit Report
+                  </button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
         {/* end messages area */}
 

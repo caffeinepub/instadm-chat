@@ -6,6 +6,7 @@ import {
 } from "@/components/ui/popover";
 import { Smile } from "lucide-react";
 import React from "react";
+import { getCustomReactions } from "../../services/featureService";
 
 const EMOJIS = [
   "😀",
@@ -52,9 +53,12 @@ const EMOJIS = [
 
 interface EmojiPickerProps {
   onEmojiSelect: (emoji: string) => void;
+  currentUid?: string;
 }
 
-export function EmojiPicker({ onEmojiSelect }: EmojiPickerProps) {
+export function EmojiPicker({ onEmojiSelect, currentUid }: EmojiPickerProps) {
+  const customReactions = currentUid ? getCustomReactions(currentUid) : [];
+
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -72,6 +76,25 @@ export function EmojiPicker({ onEmojiSelect }: EmojiPickerProps) {
         align="start"
         sideOffset={8}
       >
+        {customReactions.length > 0 && (
+          <div className="mb-2 pb-2 border-b border-border/50">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 px-1">
+              Custom
+            </p>
+            <div className="flex flex-wrap gap-0.5">
+              {customReactions.map((emoji) => (
+                <button
+                  type="button"
+                  key={emoji}
+                  onClick={() => onEmojiSelect(emoji)}
+                  className="text-xl p-1.5 rounded-lg hover:bg-accent transition-colors hover:scale-110"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-8 gap-0.5">
           {EMOJIS.map((emoji) => (
             <button

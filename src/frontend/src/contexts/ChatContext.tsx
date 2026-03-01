@@ -183,6 +183,14 @@ interface ChatContextType {
   setActiveChatId: (id: string | null) => void;
   /** Map from chatId → otherUid, populated immediately by openChat so ChatWindow doesn't have to wait for chats state */
   chatIdToOtherUid: Record<string, string>;
+  /** The user being chatted with — set synchronously in openChat before React batches state */
+  pendingChatUser: AppUser | null;
+  /** Full pending chat context set atomically so ChatWindow never sees a half-ready state */
+  pendingChatContext: {
+    chatId: string;
+    otherUid: string;
+    otherUser: AppUser;
+  } | null;
   // Group chats
   groupChats: GroupChat[];
   groupMessages: Record<string, Message[]>;
@@ -307,6 +315,17 @@ export function ChatProvider({
   const [chatIdToOtherUid, setChatIdToOtherUid] = useState<
     Record<string, string>
   >({});
+
+  // pendingChatUser: set synchronously in openChat right before setActiveChatIdState
+  // so ChatWindow can immediately render without waiting for React state batching
+  const [pendingChatUser, setPendingChatUser] = useState<AppUser | null>(null);
+
+  // pendingChatContext: atomic context set in openChat so ChatWindow renders immediately
+  const [pendingChatContext, setPendingChatContext] = useState<{
+    chatId: string;
+    otherUid: string;
+    otherUser: AppUser;
+  } | null>(null);
 
   // Polling refs
   const typingTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>(
@@ -982,6 +1001,12 @@ export function ChatProvider({
         });
         // Populate the chatId → otherUid map immediately so ChatWindow doesn't stall
         setChatIdToOtherUid((prev) => ({ ...prev, [chatId]: otherUid }));
+        // Set pendingChatUser BEFORE setActiveChatIdState so ChatWindow renders with data
+        setPendingChatUser(resolvedUser ?? null);
+        // Set atomic pending context so ChatWindow can render with all data immediately
+        if (resolvedUser) {
+          setPendingChatContext({ chatId, otherUid, otherUser: resolvedUser });
+        }
         setActiveGroupChatIdState(null);
         activeChatIdRef.current = chatId;
         setActiveChatIdState(chatId);
@@ -996,8 +1021,10 @@ export function ChatProvider({
         if (existingChat) {
           if (otherUser) {
             setUsers((prev) => ({ ...prev, [otherUid]: otherUser }));
+            setPendingChatContext({ chatId, otherUid, otherUser });
           }
           setChatIdToOtherUid((prev) => ({ ...prev, [chatId]: otherUid }));
+          setPendingChatUser(otherUser ?? null);
           setActiveChatId(chatId);
           return { chatId, isRequest: false };
         }
@@ -1910,6 +1937,8 @@ export function ChatProvider({
         activeChatId,
         setActiveChatId,
         chatIdToOtherUid,
+        pendingChatUser,
+        pendingChatContext,
         // Group chats
         groupChats,
         groupMessages,
