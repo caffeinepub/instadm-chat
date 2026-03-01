@@ -325,6 +325,53 @@ function VoiceMessageContent({
   );
 }
 
+// ─── Markdown-lite formatter ──────────────────────────────────────────────────
+function renderFormattedText(text: string): React.ReactNode[] {
+  // Split on markdown tokens: **bold**, _italic_, ~~strikethrough~~, `code`
+  const parts: React.ReactNode[] = [];
+  const regex = /(\*\*[^*]+\*\*|_[^_]+_|~~[^~]+~~|`[^`]+`)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let keyIdx = 0;
+
+  // biome-ignore lint/suspicious/noAssignInExpressions: intentional regex loop
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(
+        <span key={`txt-${keyIdx++}`}>
+          {text.slice(lastIndex, match.index)}
+        </span>,
+      );
+    }
+    const token = match[0];
+    if (token.startsWith("**") && token.endsWith("**")) {
+      parts.push(
+        <strong key={`bold-${keyIdx++}`}>{token.slice(2, -2)}</strong>,
+      );
+    } else if (token.startsWith("_") && token.endsWith("_")) {
+      parts.push(<em key={`em-${keyIdx++}`}>{token.slice(1, -1)}</em>);
+    } else if (token.startsWith("~~") && token.endsWith("~~")) {
+      parts.push(<del key={`del-${keyIdx++}`}>{token.slice(2, -2)}</del>);
+    } else if (token.startsWith("`") && token.endsWith("`")) {
+      parts.push(
+        <code
+          key={`code-${keyIdx++}`}
+          className="bg-black/15 rounded px-1 py-0.5 font-mono text-[0.85em]"
+        >
+          {token.slice(1, -1)}
+        </code>,
+      );
+    }
+    lastIndex = match.index + token.length;
+  }
+  if (lastIndex < text.length) {
+    parts.push(
+      <span key={`txt-end-${keyIdx++}`}>{text.slice(lastIndex)}</span>,
+    );
+  }
+  return parts.length > 0 ? parts : [<span key="raw">{text}</span>];
+}
+
 function BubbleContent({
   message,
   isSender,
@@ -397,7 +444,9 @@ function BubbleContent({
 
     default:
       return (
-        <p className="px-4 py-2.5 text-sm leading-relaxed">{message.text}</p>
+        <p className="px-4 py-2.5 text-sm leading-relaxed">
+          {renderFormattedText(message.text)}
+        </p>
       );
   }
 }

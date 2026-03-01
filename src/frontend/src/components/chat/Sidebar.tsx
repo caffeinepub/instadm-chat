@@ -28,6 +28,7 @@ import React, { useState, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
+import { getMood } from "../../services/featureService";
 import { hasPendingRequest } from "../../services/followService";
 import type { AppUser, Chat, GroupChat } from "../../types";
 import { CreateGroupModal } from "./CreateGroupModal";
@@ -684,6 +685,7 @@ function ChatListItem({
       : (lastMsg?.text ?? chat.lastMessage);
 
   const time = chat.lastUpdated ? formatTime(chat.lastUpdated) : "";
+  const otherMood = getMood(otherUid);
 
   const isSeen =
     !lastMsg ||
@@ -707,14 +709,21 @@ function ChatListItem({
       />
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-1">
-          <p
-            className={cn(
-              "text-sm truncate",
-              !isSeen ? "font-bold" : "font-medium",
+          <div className="flex items-center gap-1.5 min-w-0">
+            <p
+              className={cn(
+                "text-sm truncate",
+                !isSeen ? "font-bold" : "font-medium",
+              )}
+            >
+              {other.username}
+            </p>
+            {otherMood && (
+              <span className="text-[10px] text-muted-foreground truncate hidden sm:inline">
+                {otherMood.split(" ")[0]}
+              </span>
             )}
-          >
-            {other.username}
-          </p>
+          </div>
           <span className="text-[10px] text-muted-foreground flex-shrink-0">
             {time}
           </span>

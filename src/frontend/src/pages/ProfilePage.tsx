@@ -35,6 +35,13 @@ import { UserAvatar } from "../components/chat/UserAvatar";
 import { useAuth } from "../contexts/AuthContext";
 import { useChat } from "../contexts/ChatContext";
 import {
+  ALL_BADGES,
+  type MoodOption,
+  getBadges,
+  getMood,
+  setMood,
+} from "../services/featureService";
+import {
   getPendingRequestsForUser,
   hasPendingRequest,
 } from "../services/followService";
@@ -89,6 +96,30 @@ export function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Mood & badges (own profile only)
+  const [currentMood, setCurrentMood] = useState<MoodOption>(() =>
+    isOwnProfile && currentUser ? getMood(currentUser.uid) : "",
+  );
+  const myBadges =
+    isOwnProfile && currentUser ? getBadges(currentUser.uid) : [];
+
+  const MOOD_OPTIONS: MoodOption[] = [
+    "🟢 Available",
+    "🔴 Busy",
+    "🎮 Gaming",
+    "💼 At work",
+    "🌙 Away",
+    "🎵 Listening",
+    "✈️ Traveling",
+    "",
+  ];
+
+  const handleMoodChange = (mood: MoodOption) => {
+    if (!currentUser) return;
+    setMood(currentUser.uid, mood);
+    setCurrentMood(mood);
+  };
 
   if (!targetUser) {
     return (
@@ -662,6 +693,73 @@ export function ProfilePage() {
                   setForm((p) => ({ ...p, isPrivate: v }))
                 }
               />
+            </div>
+          </div>
+        )}
+
+        {/* Mood selector — own profile only, shown below stats */}
+        {isOwnProfile && !editing && (
+          <div className="mt-4 space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+              Status / Mood
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {MOOD_OPTIONS.map((mood) => (
+                <button
+                  key={mood || "clear"}
+                  type="button"
+                  onClick={() => handleMoodChange(mood)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                    currentMood === mood
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                  }`}
+                >
+                  {mood || "Clear"}
+                </button>
+              ))}
+            </div>
+            {currentMood && (
+              <p className="text-sm text-muted-foreground">
+                Currently:{" "}
+                <span className="font-medium text-foreground">
+                  {currentMood}
+                </span>
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Badges — own profile only */}
+        {isOwnProfile && myBadges.length > 0 && !editing && (
+          <div className="mt-5 space-y-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+              Badges Earned
+            </p>
+            <div className="flex flex-wrap gap-3">
+              {myBadges.map((badgeId) => {
+                const badgeInfo = ALL_BADGES.find((b) => b.id === badgeId);
+                if (!badgeInfo) return null;
+                return (
+                  <div
+                    key={badgeId}
+                    className="flex items-center gap-2 px-3 py-2 bg-muted/40 border border-border rounded-xl"
+                    title={badgeInfo.description}
+                  >
+                    <span className="text-lg leading-none">
+                      {badgeInfo.icon}
+                    </span>
+                    <div>
+                      <p className="text-xs font-semibold text-foreground leading-tight">
+                        {badgeInfo.name}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {badgeInfo.description}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

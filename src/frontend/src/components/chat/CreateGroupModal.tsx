@@ -14,6 +14,7 @@ import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
+import { awardBadge, initGroupRoles } from "../../services/featureService";
 import type { AppUser, GroupChat } from "../../types";
 import { UserAvatar } from "./UserAvatar";
 
@@ -101,6 +102,10 @@ export function CreateGroupModal({
       );
       if (group) {
         toast.success(`Group "${name}" created!`);
+        // Award badge and init roles
+        const awarded = awardBadge(currentUid, "group_creator");
+        if (awarded) toast.success("👑 Badge Earned: Group Creator!");
+        initGroupRoles(group.id, currentUid, [...memberIds, currentUid]);
         onGroupCreated(group);
         // Reset form
         setName("");

@@ -47,6 +47,7 @@ import { UserAvatar } from "../components/chat/UserAvatar";
 import { useAuth } from "../contexts/AuthContext";
 import { useChat } from "../contexts/ChatContext";
 import { useTheme } from "../contexts/ThemeContext";
+import { type MoodOption, getMood, setMood } from "../services/featureService";
 
 export function SettingsPage() {
   const navigate = useNavigate();
@@ -78,6 +79,25 @@ export function SettingsPage() {
 
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const [currentMood, setCurrentMoodState] = useState<MoodOption>(() =>
+    currentUser ? getMood(currentUser.uid) : "",
+  );
+  const MOOD_OPTIONS: MoodOption[] = [
+    "🟢 Available",
+    "🔴 Busy",
+    "🎮 Gaming",
+    "💼 At work",
+    "🌙 Away",
+    "🎵 Listening",
+    "✈️ Traveling",
+    "",
+  ];
+  const handleMoodChange = (mood: MoodOption) => {
+    if (!currentUser) return;
+    setMood(currentUser.uid, mood);
+    setCurrentMoodState(mood);
+  };
 
   const blockedUsers = Object.values(users).filter((u) =>
     currentUser?.blockedUsers?.includes(u.uid),
@@ -375,6 +395,42 @@ export function SettingsPage() {
               />
             }
           />
+        </SettingSection>
+
+        <Separator />
+
+        {/* Status / Mood */}
+        <SettingSection
+          title="Status / Mood"
+          icon={<Zap size={13} />}
+          description="Let friends know what you're up to"
+        >
+          <div className="px-5 pb-4 space-y-3">
+            <div className="flex flex-wrap gap-2">
+              {MOOD_OPTIONS.map((mood) => (
+                <button
+                  key={mood || "clear"}
+                  type="button"
+                  onClick={() => handleMoodChange(mood)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                    currentMood === mood
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                  }`}
+                >
+                  {mood || "Clear status"}
+                </button>
+              ))}
+            </div>
+            {currentMood && (
+              <p className="text-xs text-muted-foreground">
+                Current:{" "}
+                <span className="font-medium text-foreground">
+                  {currentMood}
+                </span>
+              </p>
+            )}
+          </div>
         </SettingSection>
 
         <Separator />

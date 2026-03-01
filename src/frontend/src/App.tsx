@@ -11,6 +11,8 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ChatProvider } from "./contexts/ChatContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { ArchivePage } from "./pages/ArchivePage";
+import { ExplorePage } from "./pages/ExplorePage";
+import { FeedPage } from "./pages/FeedPage";
 import { HomePage } from "./pages/HomePage";
 import { LoginPage } from "./pages/LoginPage";
 import { MessageRequestsPage } from "./pages/MessageRequestsPage";
@@ -127,6 +129,20 @@ const notificationsRoute = createRoute({
   component: NotificationsPage,
 });
 
+const feedRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/feed",
+  beforeLoad: requireAuth,
+  component: FeedPage,
+});
+
+const exploreRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/explore",
+  beforeLoad: requireAuth,
+  component: ExplorePage,
+});
+
 // ─── Router ───────────────────────────────────────────────────────────────────
 const routeTree = rootRoute.addChildren([
   loginRoute,
@@ -136,6 +152,8 @@ const routeTree = rootRoute.addChildren([
   requestsRoute,
   archiveRoute,
   notificationsRoute,
+  feedRoute,
+  exploreRoute,
 ]);
 
 const router = createRouter({ routeTree });

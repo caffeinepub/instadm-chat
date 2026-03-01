@@ -9,6 +9,8 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   Archive,
   Bell,
+  Compass,
+  LayoutGrid,
   LogOut,
   MessageCircle,
   MessageSquareDashed,
@@ -100,6 +102,16 @@ export function HomePage() {
       action: () => {},
       isActive: true,
       badge: unreadCount > 0 ? unreadCount : undefined,
+    },
+    {
+      icon: <LayoutGrid size={22} />,
+      label: "Feed",
+      action: () => navigate({ to: "/feed" }),
+    },
+    {
+      icon: <Compass size={22} />,
+      label: "Explore",
+      action: () => navigate({ to: "/explore" }),
     },
     {
       icon: <Bell size={22} />,
@@ -218,8 +230,8 @@ export function HomePage() {
           />
 
           {/* Mobile bottom nav */}
-          <div className="md:hidden flex items-center justify-around border-t border-border bg-background px-2 py-2 safe-bottom">
-            {navItems.slice(0, 4).map((item) => (
+          <div className="md:hidden flex items-center justify-around border-t border-border bg-background px-1 py-2 safe-bottom">
+            {navItems.slice(0, 5).map((item) => (
               <button
                 type="button"
                 key={item.label}

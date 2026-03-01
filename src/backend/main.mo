@@ -227,6 +227,16 @@ actor {
     users.add(caller, updatedProfile);
   };
 
+  public query ({ caller }) func getUserProfile(userId : Principal) : async ?UserProfile {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view profiles");
+    };
+    if (not canViewProfile(caller, userId)) {
+      return null;
+    };
+    users.get(userId);
+  };
+
   public shared ({ caller }) func searchProfiles(searchText : Text) : async [UserProfile] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can search profiles");
@@ -409,14 +419,11 @@ actor {
     users.add(caller, updatedProfile);
   };
 
-  public query ({ caller }) func getUserProfile(userId : Principal) : async ?UserProfile {
-    if (not canViewProfile(caller, userId)) {
-      return null;
-    };
-    users.get(userId);
-  };
-
   public query ({ caller }) func searchUsersByUsername(searchText : Text) : async [UserProfile] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can search profiles");
+    };
+
     let allUsers = users.values().toArray();
 
     let filteredUsers = allUsers.filter(
@@ -433,6 +440,10 @@ actor {
   };
 
   public query ({ caller }) func searchUsersByUsernamePrefix(prefix : Text) : async [UserProfile] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can search profiles");
+    };
+
     let allUsers = users.values().toArray();
 
     let filteredUsers = allUsers.filter(
@@ -1274,6 +1285,9 @@ actor {
 
   // HTTP Outcall placeholder for fetching emails by phone number
   public query ({ caller }) func getEmailByPhoneNumber(_phoneNumber : Text) : async Text {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can access this feature");
+    };
     Runtime.trap("This feature is currently unsupported as Motoko does not support HTTP outcalls yet. Implement in TypeScript.");
   };
 };

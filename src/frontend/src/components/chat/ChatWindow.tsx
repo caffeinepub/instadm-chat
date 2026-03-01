@@ -12,8 +12,12 @@ import { Principal } from "@icp-sdk/core/principal";
 import {
   Archive,
   ArrowLeft,
+  BarChart2,
+  Bold,
+  Code,
   Image,
-  Info,
+  Images,
+  Italic,
   Loader2,
   Mic,
   MicOff,
@@ -22,6 +26,8 @@ import {
   Search,
   Send,
   Square,
+  Strikethrough,
+  Timer,
   VolumeX,
   Zap,
 } from "lucide-react";
@@ -37,11 +43,21 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
 import { useActor } from "../../hooks/useActor";
 import { saveUser } from "../../services/chatService";
+import {
+  type Poll,
+  awardBadge,
+  getPollsForChat,
+  incrementMsgCount,
+  setSelfDestructTimer,
+} from "../../services/featureService";
 import { backendProfileToAppUser } from "../../services/profileService";
 import type { Message } from "../../types";
 import { EmojiPicker } from "./EmojiPicker";
 import { ForwardModal } from "./ForwardModal";
+import { MediaGallery } from "./MediaGallery";
 import { MessageBubble } from "./MessageBubble";
+import { PollBubble } from "./PollBubble";
+import { PollModal } from "./PollModal";
 import { TypingIndicator } from "./TypingIndicator";
 import { UserAvatar } from "./UserAvatar";
 
@@ -90,6 +106,13 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [loadingTimedOut, setLoadingTimedOut] = useState(false);
+  const [showPollModal, setShowPollModal] = useState(false);
+  const [chatPolls, setChatPolls] = useState<Poll[]>([]);
+  const [showMediaGallery, setShowMediaGallery] = useState(false);
+  const [selfDestructDelay, setSelfDestructDelay] = useState<number | null>(
+    null,
+  ); // ms
+  const [showFormattingBar, setShowFormattingBar] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -219,6 +242,37 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
     return () => timers.forEach(clearTimeout);
   }, [chat?.vanishMode, chatMessages, chatId, deleteMessageForEveryone]);
 
+  // Load polls for this chat
+  useEffect(() => {
+    setChatPolls(getPollsForChat(chatId));
+  }, [chatId]);
+
+  // Formatting helpers
+  const wrapSelectedText = useCallback(
+    (prefix: string, suffix: string) => {
+      const input = inputRef.current;
+      if (!input) return;
+      const start = input.selectionStart ?? 0;
+      const end = input.selectionEnd ?? 0;
+      const selected = inputText.slice(start, end);
+      const replacement = selected
+        ? `${prefix}${selected}${suffix}`
+        : `${prefix}${suffix}`;
+      const newText =
+        inputText.slice(0, start) + replacement + inputText.slice(end);
+      setInputText(newText);
+      // Restore focus
+      setTimeout(() => {
+        input.focus();
+        if (!selected) {
+          const newPos = start + prefix.length;
+          input.setSelectionRange(newPos, newPos);
+        }
+      }, 0);
+    },
+    [inputText],
+  );
+
   const handleSend = useCallback(async () => {
     const text = inputText.trim();
     if (!text || isSending) return;
@@ -233,10 +287,30 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
     } else {
       setIsSending(true);
       try {
-        await sendMessage(chatId, currentUid, text, "text", {
+        const msg = await sendMessage(chatId, currentUid, text, "text", {
           replyTo: replyToMessage?.id,
         });
         setReplyToMessage(null);
+
+        // Badge tracking
+        const count = incrementMsgCount(currentUid);
+        if (count === 1) {
+          const awarded = awardBadge(currentUid, "first_message");
+          if (awarded) toast.success("💬 Badge Earned: First Message!");
+        } else if (count === 100) {
+          const awarded = awardBadge(currentUid, "100_messages");
+          if (awarded) toast.success("🏆 Badge Earned: Chat Champion!");
+        }
+
+        // Self-destruct timer
+        if (selfDestructDelay && selfDestructDelay > 0 && msg.id) {
+          const destroyAt = Date.now() + selfDestructDelay;
+          setSelfDestructTimer(msg.id, chatId, destroyAt);
+          // Schedule auto-delete
+          setTimeout(() => {
+            deleteMessageForEveryone(chatId, msg.id).catch(() => {});
+          }, selfDestructDelay);
+        }
       } catch {
         toast.error("Failed to send message");
       } finally {
@@ -256,6 +330,8 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
     editMessage,
     sendMessage,
     setTyping,
+    selfDestructDelay,
+    deleteMessageForEveryone,
   ]);
 
   const handleKeyDown = useCallback(
@@ -578,6 +654,15 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
           >
             <Search size={17} />
           </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setShowMediaGallery(true)}
+            className="w-9 h-9"
+            title="Shared Media"
+          >
+            <Images size={17} />
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="w-9 h-9">
@@ -607,9 +692,6 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button variant="ghost" size="icon" className="w-9 h-9">
-            <Info size={17} />
-          </Button>
         </div>
       </div>
 
@@ -676,6 +758,23 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
             </p>
           </div>
         )}
+
+        {/* Polls for this chat */}
+        {chatPolls.map((poll) => (
+          <div
+            key={poll.id}
+            className={cn(
+              "flex items-end gap-2 px-4 py-1",
+              poll.createdBy === currentUid ? "flex-row-reverse" : "flex-row",
+            )}
+          >
+            <PollBubble
+              poll={poll}
+              currentUid={currentUid}
+              isSender={poll.createdBy === currentUid}
+            />
+          </div>
+        ))}
 
         {filteredMessages.map((msg, idx) => {
           const prevMsg = filteredMessages[idx - 1];
@@ -818,63 +917,184 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
           </Button>
         </div>
       ) : (
-        <div className="flex items-end gap-1.5 sm:gap-2 px-2 sm:px-3 py-3 border-t border-border bg-background input-bar-mobile">
-          <EmojiPicker onEmojiSelect={(e) => setInputText((p) => p + e)} />
-          <div className="flex-1 relative">
-            <Input
-              ref={inputRef}
-              value={inputText}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              placeholder="Message..."
-              className="rounded-2xl bg-muted/60 border border-border/60 focus-visible:ring-1 focus-visible:ring-primary/50 focus-visible:border-primary/40 px-4 h-10 text-sm transition-all"
-              disabled={isSending || isUploading}
+        <div className="flex flex-col border-t border-border bg-background">
+          {/* Formatting toolbar */}
+          {showFormattingBar && (
+            <div className="flex items-center gap-1 px-3 py-1.5 border-b border-border/50 bg-muted/30">
+              <button
+                type="button"
+                onClick={() => wrapSelectedText("**", "**")}
+                className="w-7 h-7 rounded-lg hover:bg-accent flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors font-bold text-xs"
+                title="Bold"
+              >
+                B
+              </button>
+              <button
+                type="button"
+                onClick={() => wrapSelectedText("_", "_")}
+                className="w-7 h-7 rounded-lg hover:bg-accent flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors italic text-xs"
+                title="Italic"
+              >
+                I
+              </button>
+              <button
+                type="button"
+                onClick={() => wrapSelectedText("~~", "~~")}
+                className="w-7 h-7 rounded-lg hover:bg-accent flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors line-through text-xs"
+                title="Strikethrough"
+              >
+                S
+              </button>
+              <button
+                type="button"
+                onClick={() => wrapSelectedText("`", "`")}
+                className="w-7 h-7 rounded-lg hover:bg-accent flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors font-mono text-xs"
+                title="Code"
+              >
+                {"</>"}
+              </button>
+              <div className="ml-auto flex items-center gap-1">
+                {/* Self-destruct selector */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className={cn(
+                        "flex items-center gap-1 px-2 h-7 rounded-lg text-xs font-medium transition-colors",
+                        selfDestructDelay
+                          ? "bg-destructive/10 text-destructive border border-destructive/30"
+                          : "hover:bg-accent text-muted-foreground",
+                      )}
+                      title="Self-destruct timer"
+                    >
+                      <Timer size={12} />
+                      {selfDestructDelay
+                        ? selfDestructDelay < 60000
+                          ? `${selfDestructDelay / 1000}s`
+                          : selfDestructDelay < 3600000
+                            ? `${selfDestructDelay / 60000}m`
+                            : `${selfDestructDelay / 3600000}h`
+                        : "Timer"}
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="rounded-xl w-36">
+                    <DropdownMenuItem
+                      onClick={() => setSelfDestructDelay(null)}
+                    >
+                      None
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setSelfDestructDelay(10000)}
+                    >
+                      10 seconds
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setSelfDestructDelay(30000)}
+                    >
+                      30 seconds
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setSelfDestructDelay(60000)}
+                    >
+                      1 minute
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setSelfDestructDelay(300000)}
+                    >
+                      5 minutes
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setSelfDestructDelay(3600000)}
+                    >
+                      1 hour
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-end gap-1.5 sm:gap-2 px-2 sm:px-3 py-3 input-bar-mobile">
+            <EmojiPicker onEmojiSelect={(e) => setInputText((p) => p + e)} />
+            <div className="flex-1 relative">
+              <Input
+                ref={inputRef}
+                value={inputText}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                placeholder="Message..."
+                className="rounded-2xl bg-muted/60 border border-border/60 focus-visible:ring-1 focus-visible:ring-primary/50 focus-visible:border-primary/40 px-4 h-10 text-sm transition-all"
+                disabled={isSending || isUploading}
+              />
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,video/*,.pdf,.doc,.docx"
+              className="hidden"
+              onChange={handleFileSelect}
             />
-          </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,video/*,.pdf,.doc,.docx"
-            className="hidden"
-            onChange={handleFileSelect}
-          />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading}
-            className="text-muted-foreground hover:text-primary flex-shrink-0 h-10 w-10 rounded-xl transition-colors"
-          >
-            {isUploading ? (
-              <Loader2 size={18} className="animate-spin" />
-            ) : (
-              <Image size={20} />
-            )}
-          </Button>
-          {inputText.trim() ? (
-            <Button
-              size="icon"
-              onClick={handleSend}
-              disabled={isSending}
-              className="rounded-xl flex-shrink-0 h-10 w-10 gradient-btn shadow-sm"
-            >
-              {isSending ? (
-                <div className="w-4 h-4 border-2 border-white/60 border-t-white rounded-full animate-spin" />
-              ) : (
-                <Send size={15} className="text-white" />
-              )}
-            </Button>
-          ) : (
+            {/* Formatting toggle */}
             <Button
               variant="ghost"
               size="icon"
-              onClick={startRecording}
-              className="text-muted-foreground hover:text-primary flex-shrink-0 h-10 w-10 rounded-xl transition-colors"
-              title="Record voice message"
+              onClick={() => setShowFormattingBar((v) => !v)}
+              className={cn(
+                "text-muted-foreground hover:text-primary flex-shrink-0 h-10 w-10 rounded-xl transition-colors",
+                showFormattingBar && "bg-accent text-foreground",
+              )}
+              title="Formatting"
             >
-              <Mic size={20} />
+              <Bold size={16} />
             </Button>
-          )}
+            {/* Poll button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowPollModal(true)}
+              className="text-muted-foreground hover:text-primary flex-shrink-0 h-10 w-10 rounded-xl transition-colors"
+              title="Create Poll"
+            >
+              <BarChart2 size={18} />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading}
+              className="text-muted-foreground hover:text-primary flex-shrink-0 h-10 w-10 rounded-xl transition-colors"
+            >
+              {isUploading ? (
+                <Loader2 size={18} className="animate-spin" />
+              ) : (
+                <Image size={20} />
+              )}
+            </Button>
+            {inputText.trim() ? (
+              <Button
+                size="icon"
+                onClick={handleSend}
+                disabled={isSending}
+                className="rounded-xl flex-shrink-0 h-10 w-10 gradient-btn shadow-sm"
+              >
+                {isSending ? (
+                  <div className="w-4 h-4 border-2 border-white/60 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <Send size={15} className="text-white" />
+                )}
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={startRecording}
+                className="text-muted-foreground hover:text-primary flex-shrink-0 h-10 w-10 rounded-xl transition-colors"
+                title="Record voice message"
+              >
+                <Mic size={20} />
+              </Button>
+            )}
+          </div>
         </div>
       )}
 
@@ -893,6 +1113,25 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
             forwardMessage(forwardingMessage, targetChatId, currentUid);
           }
         }}
+      />
+
+      {/* Poll modal */}
+      <PollModal
+        open={showPollModal}
+        chatId={chatId}
+        createdBy={currentUid}
+        onClose={() => setShowPollModal(false)}
+        onPollCreated={() => {
+          setChatPolls(getPollsForChat(chatId));
+          setShowPollModal(false);
+        }}
+      />
+
+      {/* Media gallery */}
+      <MediaGallery
+        open={showMediaGallery}
+        messages={chatMessages}
+        onClose={() => setShowMediaGallery(false)}
       />
     </div>
   );
