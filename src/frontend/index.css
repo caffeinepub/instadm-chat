@@ -1,0 +1,397 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Fonts ─────────────────────────────────────────────────── */
+@font-face {
+  font-family: "Sora";
+  src: url("/assets/fonts/Sora[wght].woff2") format("woff2");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Figtree";
+  src: url("/assets/fonts/Figtree[wght].woff2") format("woff2");
+  font-weight: 300 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+
+@layer base {
+  :root {
+    --radius: 0.625rem;
+
+    /* Linkr Light Mode — crisp white with vibrant purple accents */
+    --background: 0.99 0 0;
+    --foreground: 0.12 0.008 285;
+    --card: 1 0 0;
+    --card-foreground: 0.12 0.008 285;
+    --popover: 1 0 0;
+    --popover-foreground: 0.12 0.008 285;
+    --primary: 0.60 0.28 280;
+    --primary-foreground: 1 0 0;
+    --secondary: 0.95 0.005 285;
+    --secondary-foreground: 0.2 0.01 285;
+    --muted: 0.95 0.005 285;
+    --muted-foreground: 0.48 0.012 285;
+    --accent: 0.95 0.005 285;
+    --accent-foreground: 0.12 0.008 285;
+    --destructive: 0.577 0.245 27.325;
+    --destructive-foreground: 1 0 0;
+    --border: 0.89 0.008 285;
+    --input: 0.89 0.008 285;
+    --ring: 0.60 0.28 280;
+
+    /* Chat bubbles */
+    --bubble-sender: 0.60 0.28 280;
+    --bubble-receiver: 0.94 0.007 285;
+    --online-dot: 0.73 0.2 145;
+
+    /* Sidebar */
+    --sidebar: 0.975 0.006 285;
+    --sidebar-foreground: 0.12 0.008 285;
+    --sidebar-primary: 0.60 0.28 280;
+    --sidebar-primary-foreground: 1 0 0;
+    --sidebar-accent: 0.93 0.008 285;
+    --sidebar-accent-foreground: 0.12 0.008 285;
+    --sidebar-border: 0.89 0.008 285;
+    --sidebar-ring: 0.60 0.28 280;
+
+    --chart-1: 0.646 0.222 41.116;
+    --chart-2: 0.6 0.118 184.704;
+    --chart-3: 0.398 0.07 227.392;
+    --chart-4: 0.828 0.189 84.429;
+    --chart-5: 0.769 0.188 70.08;
+  }
+
+  .dark {
+    /* Linkr Dark Mode — deep dark with vibrant purple-pink-cyan mood */
+    --background: 0.08 0.015 270;
+    --foreground: 0.95 0.005 270;
+    --card: 0.12 0.018 268;
+    --card-foreground: 0.95 0.005 270;
+    --popover: 0.14 0.018 268;
+    --popover-foreground: 0.95 0.005 270;
+    --primary: 0.65 0.28 280;
+    --primary-foreground: 1 0 0;
+    --secondary: 0.18 0.018 268;
+    --secondary-foreground: 0.88 0.006 270;
+    --muted: 0.18 0.018 268;
+    --muted-foreground: 0.55 0.015 270;
+    --accent: 0.2 0.022 268;
+    --accent-foreground: 0.93 0.005 270;
+    --destructive: 0.65 0.22 22;
+    --destructive-foreground: 1 0 0;
+    --border: 0.22 0.02 268;
+    --input: 0.22 0.02 268;
+    --ring: 0.65 0.28 280;
+
+    /* Vibrant bubble colors */
+    --bubble-sender: 0.60 0.28 280;
+    --bubble-receiver: 0.2 0.022 268;
+    --online-dot: 0.73 0.2 145;
+
+    --sidebar: 0.10 0.018 270;
+    --sidebar-foreground: 0.95 0.005 270;
+    --sidebar-primary: 0.65 0.28 280;
+    --sidebar-primary-foreground: 1 0 0;
+    --sidebar-accent: 0.18 0.018 268;
+    --sidebar-accent-foreground: 0.93 0.005 270;
+    --sidebar-border: 0.2 0.02 268;
+    --sidebar-ring: 0.65 0.28 280;
+
+    --chart-1: 0.488 0.243 264.376;
+    --chart-2: 0.696 0.17 162.48;
+    --chart-3: 0.769 0.188 70.08;
+    --chart-4: 0.627 0.265 303.9;
+    --chart-5: 0.645 0.246 16.439;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Sora", "Figtree", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow: hidden;
+    height: 100dvh;
+    letter-spacing: -0.01em;
+  }
+
+  #root {
+    height: 100dvh;
+    overflow: hidden;
+  }
+}
+
+/* ─── Chat bubble shapes ─────────────────────────────────────── */
+.bubble-sender {
+  background: oklch(var(--bubble-sender));
+  color: #ffffff;
+  border-radius: 18px 18px 4px 18px;
+}
+
+.bubble-receiver {
+  background: oklch(var(--bubble-receiver));
+  color: oklch(var(--foreground));
+  border-radius: 18px 18px 18px 4px;
+}
+
+/* ─── Typing indicator animation ────────────────────────────── */
+@keyframes typingBounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-6px); }
+}
+
+.typing-dot {
+  animation: typingBounce 1.2s infinite ease-in-out;
+}
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+/* ─── Message slide-in ───────────────────────────────────────── */
+@keyframes msgSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.msg-enter {
+  animation: msgSlideIn 0.18s ease-out forwards;
+}
+
+/* ─── Scroll area clean ──────────────────────────────────────── */
+.chat-scroll::-webkit-scrollbar {
+  width: 3px;
+}
+.chat-scroll::-webkit-scrollbar-thumb {
+  background: oklch(var(--border));
+  border-radius: 4px;
+}
+.chat-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ─── Input bar safe area ────────────────────────────────────── */
+.input-bar-mobile {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 12px);
+}
+
+/* ─── Online dot pulse ───────────────────────────────────────── */
+@keyframes onlinePulse {
+  0%, 100% { box-shadow: 0 0 0 0 oklch(0.73 0.2 145 / 0.6); }
+  50% { box-shadow: 0 0 0 4px oklch(0.73 0.2 145 / 0); }
+}
+.online-pulse {
+  animation: onlinePulse 2.5s infinite;
+}
+
+/* ─── Reaction pop ───────────────────────────────────────────── */
+@keyframes reactionPop {
+  0% { transform: scale(0.5); opacity: 0; }
+  70% { transform: scale(1.12); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.reaction-pop {
+  animation: reactionPop 0.22s ease-out forwards;
+}
+
+/* ─── Context menu fade ──────────────────────────────────────── */
+@keyframes contextFadeIn {
+  from { opacity: 0; transform: scale(0.95) translateY(-4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.context-menu-enter {
+  animation: contextFadeIn 0.14s ease-out forwards;
+}
+
+/* ─── Page fade ──────────────────────────────────────────────── */
+@keyframes pageFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.page-fade {
+  animation: pageFadeIn 0.22s ease-out;
+}
+
+/* ─── Unread badge bounce ────────────────────────────────────── */
+@keyframes badgePop {
+  0% { transform: scale(0.5); }
+  70% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+.badge-pop {
+  animation: badgePop 0.2s ease-out forwards;
+}
+
+/* ─── Slide in from right ────────────────────────────────────── */
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.slide-in-right {
+  animation: slideInRight 0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* ─── Slide in from bottom ───────────────────────────────────── */
+@keyframes slideInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.slide-in-up {
+  animation: slideInUp 0.2s ease-out forwards;
+}
+
+/* ─── Floating orb animation (login page) ───────────────────── */
+@keyframes floatOrb {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -50px) scale(1.05); }
+  66% { transform: translate(-20px, 30px) scale(0.95); }
+}
+
+@keyframes floatOrbReverse {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-25px, 40px) scale(0.95); }
+  66% { transform: translate(35px, -30px) scale(1.05); }
+}
+
+@keyframes floatOrbSlow {
+  0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); }
+  50% { transform: translate(20px, -40px) scale(1.08) rotate(180deg); }
+}
+
+.float-orb {
+  animation: floatOrb var(--duration, 8s) ease-in-out infinite;
+}
+.float-orb-reverse {
+  animation: floatOrbReverse var(--duration, 10s) ease-in-out infinite;
+}
+.float-orb-slow {
+  animation: floatOrbSlow var(--duration, 14s) ease-in-out infinite;
+}
+
+/* ─── Gradient text ──────────────────────────────────────────── */
+.gradient-text {
+  background: linear-gradient(135deg, oklch(0.78 0.2 290), oklch(0.72 0.22 220), oklch(0.82 0.18 180));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gradient-text-vibrant {
+  background: linear-gradient(135deg, oklch(0.75 0.26 300), oklch(0.68 0.28 280), oklch(0.72 0.22 220));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─── Gradient button ────────────────────────────────────────── */
+.gradient-btn {
+  background: linear-gradient(135deg, oklch(0.55 0.28 290), oklch(0.60 0.25 260), oklch(0.65 0.22 220));
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+.gradient-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, oklch(0.60 0.30 290), oklch(0.65 0.27 260), oklch(0.70 0.24 220));
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.gradient-btn:hover::before {
+  opacity: 1;
+}
+.gradient-btn:hover {
+  box-shadow: 0 0 40px oklch(0.55 0.28 285 / 0.5), 0 8px 24px oklch(0.55 0.28 285 / 0.3);
+  transform: translateY(-1px);
+}
+.gradient-btn:active {
+  transform: translateY(0);
+}
+
+/* ─── Glass card ─────────────────────────────────────────────── */
+.glass-card {
+  background: oklch(var(--card) / 0.7);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid oklch(var(--border) / 0.5);
+}
+
+/* ─── Glass panel ────────────────────────────────────────────── */
+.glass-panel {
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  background: oklch(var(--popover) / 0.85);
+}
+
+/* ─── II button glow ─────────────────────────────────────────── */
+.ii-btn-glow {
+  box-shadow: 0 0 0 0 oklch(0.65 0.28 280 / 0.5);
+  transition: box-shadow 0.3s ease, transform 0.2s ease;
+}
+.ii-btn-glow:hover {
+  box-shadow: 0 0 0 6px oklch(0.65 0.28 280 / 0.15), 0 8px 30px oklch(0.65 0.28 280 / 0.35);
+  transform: translateY(-1px);
+}
+
+/* ─── Login chat bubble float ────────────────────────────────── */
+@keyframes bubbleFloat {
+  0%, 100% { transform: translateY(0px) rotate(-1deg); opacity: 0.15; }
+  50% { transform: translateY(-12px) rotate(1deg); opacity: 0.2; }
+}
+@keyframes bubbleFloat2 {
+  0%, 100% { transform: translateY(0px) rotate(2deg); opacity: 0.12; }
+  50% { transform: translateY(-8px) rotate(-2deg); opacity: 0.18; }
+}
+.bubble-float { animation: bubbleFloat 4s ease-in-out infinite; }
+.bubble-float-2 { animation: bubbleFloat2 5s ease-in-out infinite 0.5s; }
+.bubble-float-3 { animation: bubbleFloat 6s ease-in-out infinite 1s; }
+
+/* ─── Seen indicator ─────────────────────────────────────────── */
+@keyframes seenFadeIn {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.seen-indicator {
+  animation: seenFadeIn 0.3s ease-out forwards;
+}
+
+/* ─── Typing indicator slide ─────────────────────────────────── */
+@keyframes typingSlideIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.typing-slide-in {
+  animation: typingSlideIn 0.2s ease-out forwards;
+}
+
+/* ─── Feature pill shimmer ───────────────────────────────────── */
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+.pill-shimmer {
+  background: linear-gradient(90deg, oklch(0.3 0.03 270), oklch(0.35 0.05 290), oklch(0.3 0.03 270));
+  background-size: 200% auto;
+  animation: shimmer 3s linear infinite;
+}
