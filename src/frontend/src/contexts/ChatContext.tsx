@@ -8,8 +8,11 @@ import {
   useRef,
   useState,
 } from "react";
+import { flushSync } from "react-dom";
+import { toast } from "sonner";
 import type {
   Chat as BackendChat,
+  GroupChat as BackendGroupChat,
   Message as BackendMessage,
   UserProfile,
 } from "../backend.d";
@@ -39,10 +42,15 @@ import {
   saveFollowRequests,
   updateRequestStatus,
 } from "../services/followService";
+import {
+  showGroupNotification,
+  showMessageNotification,
+} from "../services/notificationService";
 import type {
   AppNotification,
   AppUser,
   Chat,
+  GroupChat,
   Message,
   MessageRequest,
   MessageType,
@@ -95,7 +103,9 @@ function backendChatToFrontend(
 }
 
 function backendMsgToFrontend(msg: BackendMessage, chatId: string): Message {
-  const clientId = `${chatId}_${msg.createdAt.toString()}_${msg.senderId.toString().slice(-8)}`;
+  // Use exact backend message ID format: chatId_nanosecondTimestamp
+  // This matches Motoko's generateMessageId: chatId # "_" # Int.toText(timestamp)
+  const clientId = `${chatId}_${msg.createdAt.toString()}`;
   return {
     id: clientId,
     chatId,
@@ -141,6 +151,22 @@ function saveDeletedForMe(uid: string, set: Set<string>): void {
   );
 }
 
+// ─── Backend GroupChat conversion ─────────────────────────────────────────────
+
+function backendGroupChatToFrontend(bg: BackendGroupChat): GroupChat {
+  return {
+    id: bg.id,
+    name: bg.name,
+    description: bg.description,
+    adminId: bg.adminId.toString(),
+    members: bg.members.map((m) => m.toString()),
+    createdAt: Number(bg.createdAt / BigInt(1_000_000)),
+    lastMessage: bg.lastMessage ?? "",
+    lastUpdated: Number(bg.lastUpdated / BigInt(1_000_000)),
+    typing: Object.fromEntries(bg.typing),
+  };
+}
+
 // ─── Context type ─────────────────────────────────────────────────────────────
 
 interface ChatContextType {
@@ -151,6 +177,26 @@ interface ChatContextType {
   notifications: AppNotification[];
   activeChatId: string | null;
   setActiveChatId: (id: string | null) => void;
+  // Group chats
+  groupChats: GroupChat[];
+  groupMessages: Record<string, Message[]>;
+  activeGroupChatId: string | null;
+  setActiveGroupChatId: (id: string | null) => void;
+  createGroupChat: (
+    name: string,
+    description: string,
+    memberIds: string[],
+  ) => Promise<GroupChat | null>;
+  sendGroupMessage: (
+    groupId: string,
+    senderId: string,
+    text: string,
+    type?: MessageType,
+    extra?: Partial<Message>,
+  ) => Promise<Message>;
+  markGroupSeen: (groupId: string) => Promise<void>;
+  leaveGroup: (groupId: string) => Promise<void>;
+  setGroupTyping: (groupId: string, uid: string, isTyping: boolean) => void;
   sendMessage: (
     chatId: string,
     senderId: string,
@@ -182,6 +228,7 @@ interface ChatContextType {
   openChat: (
     currentUid: string,
     otherUid: string,
+    knownUser?: AppUser,
   ) => Promise<{ chatId: string; isRequest: boolean }>;
   searchUsers: (prefix: string, excludeUid: string) => Promise<AppUser[]>;
   markSeen: (chatId: string, uid: string) => Promise<void>;
@@ -237,6 +284,15 @@ export function ChatProvider({
   const [activeChatId, setActiveChatIdState] = useState<string | null>(null);
   const [isLoadingChats, setIsLoadingChats] = useState(false);
 
+  // Group chats
+  const [groupChats, setGroupChats] = useState<GroupChat[]>([]);
+  const [groupMessages, setGroupMessages] = useState<Record<string, Message[]>>(
+    {},
+  );
+  const [activeGroupChatId, setActiveGroupChatIdState] = useState<
+    string | null
+  >(null);
+
   const [followRequests, setFollowRequests] = useState<FollowRequest[]>(() =>
     getFollowRequests(),
   );
@@ -248,7 +304,16 @@ export function ChatProvider({
   const messagesPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const chatsPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const typingPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const groupPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const groupMsgPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastMessageTimestampRef = useRef<Record<string, bigint>>({});
+  // Refs to avoid stale closures in polling callbacks
+  const activeChatIdRef = useRef<string | null>(null);
+  const activeGroupChatIdRef = useRef<string | null>(null);
+  const groupChatsRef = useRef<GroupChat[]>([]);
+  const setActiveGroupChatIdRef = useRef<((id: string | null) => void) | null>(
+    null,
+  );
 
   // Track deleted-for-me per user (client-side)
   const deletedForMeRef = useRef<Set<string>>(getDeletedForMe(currentUid));
@@ -329,15 +394,100 @@ export function ChatProvider({
           // Full refresh
           setMessages((prev) => ({ ...prev, [chatId]: withDeletedFor }));
         } else {
-          // Incremental: merge new messages
+          // Incremental: merge new messages AND update existing ones (seenBy, text, edited, deletedForEveryone)
+          // Also fire browser notifications for new messages from others
+          const currentUsers = getUsers();
+
           setMessages((prev) => {
             const existing = prev[chatId] ?? [];
             const existingIds = new Set(existing.map((m) => m.id));
             const newMsgs = withDeletedFor.filter(
               (m) => !existingIds.has(m.id),
             );
-            if (newMsgs.length === 0) return prev;
-            return { ...prev, [chatId]: [...existing, ...newMsgs] };
+
+            // Fire browser notifications + in-app toasts for new messages from others
+            for (const msg of newMsgs) {
+              if (msg.senderId !== currentUid) {
+                const senderName =
+                  currentUsers[msg.senderId]?.username ?? "Someone";
+                const msgType = msg.messageType as
+                  | "text"
+                  | "image"
+                  | "video"
+                  | "voice"
+                  | "file"
+                  | "gif";
+
+                // Browser notification
+                showMessageNotification(
+                  senderName,
+                  msg.text,
+                  chatId,
+                  msgType,
+                  activeChatIdRef.current,
+                  () => {
+                    setActiveChatId(chatId);
+                  },
+                );
+
+                // In-app sonner toast (only when this chat is not active)
+                if (activeChatIdRef.current !== chatId) {
+                  const preview =
+                    msgType !== "text"
+                      ? msgType === "voice"
+                        ? "🎤 Voice message"
+                        : msgType === "image"
+                          ? "📷 Photo"
+                          : msgType === "video"
+                            ? "🎥 Video"
+                            : `📎 ${msgType}`
+                      : msg.text.length > 60
+                        ? `${msg.text.slice(0, 60)}…`
+                        : msg.text;
+
+                  toast(`💬 ${senderName}: ${preview}`, {
+                    description: "Tap to open",
+                    duration: 4000,
+                    action: {
+                      label: "Open",
+                      onClick: () => setActiveChatId(chatId),
+                    },
+                  });
+                }
+              }
+            }
+
+            // Also update existing messages with any changes (seen, edit, delete)
+            const updatedExisting = existing.map((m) => {
+              const updated = withDeletedFor.find((nm) => nm.id === m.id);
+              if (updated) {
+                const hasChanges =
+                  updated.seenBy.length > m.seenBy.length ||
+                  updated.deletedForEveryone !== m.deletedForEveryone ||
+                  updated.text !== m.text ||
+                  updated.edited !== m.edited ||
+                  Object.keys(updated.reactions).length !==
+                    Object.keys(m.reactions).length;
+                if (hasChanges) {
+                  return {
+                    ...m,
+                    seenBy: updated.seenBy,
+                    deletedForEveryone: updated.deletedForEveryone,
+                    text: updated.text,
+                    edited: updated.edited,
+                    editedAt: updated.editedAt,
+                    reactions: updated.reactions,
+                  };
+                }
+              }
+              return m;
+            });
+            if (
+              newMsgs.length === 0 &&
+              updatedExisting.every((m, i) => m === existing[i])
+            )
+              return prev;
+            return { ...prev, [chatId]: [...updatedExisting, ...newMsgs] };
           });
         }
 
@@ -406,7 +556,7 @@ export function ChatProvider({
 
     chatsPollRef.current = setInterval(() => {
       fetchChats();
-    }, 2000);
+    }, 1200);
 
     return () => {
       if (chatsPollRef.current) clearInterval(chatsPollRef.current);
@@ -414,6 +564,10 @@ export function ChatProvider({
   }, [actor, isFetching, fetchChats]);
 
   // ─── Poll active chat messages every 800ms ────────────────────────────────
+
+  const fullRefreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!actor || isFetching || !activeChatId) return;
@@ -425,10 +579,17 @@ export function ChatProvider({
     messagesPollRef.current = setInterval(() => {
       const lastTs = lastMessageTimestampRef.current[activeChatId] ?? 0n;
       fetchMessages(activeChatId, lastTs);
-    }, 800);
+    }, 500);
+
+    // Full refresh every 3 seconds to catch any missed updates (seen, edits, reactions)
+    fullRefreshIntervalRef.current = setInterval(() => {
+      fetchMessages(activeChatId, 0n);
+    }, 3000);
 
     return () => {
       if (messagesPollRef.current) clearInterval(messagesPollRef.current);
+      if (fullRefreshIntervalRef.current)
+        clearInterval(fullRefreshIntervalRef.current);
     };
   }, [actor, isFetching, activeChatId, fetchMessages]);
 
@@ -439,7 +600,7 @@ export function ChatProvider({
 
     typingPollRef.current = setInterval(() => {
       fetchTypingStatus(activeChatId);
-    }, 800);
+    }, 500);
 
     return () => {
       if (typingPollRef.current) clearInterval(typingPollRef.current);
@@ -464,6 +625,7 @@ export function ChatProvider({
 
   const setActiveChatId = useCallback(
     (id: string | null) => {
+      activeChatIdRef.current = id;
       setActiveChatIdState(id);
       if (id) {
         lastMessageTimestampRef.current[id] = 0n;
@@ -626,6 +788,8 @@ export function ChatProvider({
       if (!actor) return;
       try {
         await actor.deleteMessageForEveryone(chatId, messageId);
+        // Refresh to confirm the delete propagated to all clients
+        setTimeout(() => fetchMessages(chatId, 0n), 500);
       } catch {
         fetchMessages(chatId, 0n);
       }
@@ -716,6 +880,7 @@ export function ChatProvider({
     async (
       currentUid: string,
       otherUid: string,
+      knownUser?: AppUser,
     ): Promise<{ chatId: string; isRequest: boolean }> => {
       const chatId = generateChatId(currentUid, otherUid);
 
@@ -725,37 +890,61 @@ export function ChatProvider({
         return { chatId, isRequest: false };
       }
 
+      // Use knownUser if provided (e.g. from search results), else look up in state
+      const otherUser = knownUser ?? users[otherUid];
+
       // Check if target user is private and current user is not a follower
-      const otherUser = users[otherUid];
       if (otherUser?.isPrivate) {
         const isFollower = otherUser.followers.includes(currentUid);
         if (!isFollower) {
-          // Check if already sent a follow request
-          const alreadyRequested = hasPendingRequest(currentUid, otherUid);
-          if (!alreadyRequested) {
-            return { chatId, isRequest: true };
-          }
           return { chatId, isRequest: true };
         }
       }
 
       try {
         const otherPrincipal = Principal.fromText(otherUid);
+
+        // Fetch other user profile if not already resolved
+        let resolvedUser: AppUser | undefined = otherUser;
+        if (!resolvedUser) {
+          try {
+            const profile = await actor.getUserProfile(otherPrincipal);
+            if (profile) {
+              resolvedUser = backendProfileToAppUser(profile);
+              saveUser(resolvedUser);
+            }
+          } catch {
+            // ignore — continue anyway
+          }
+        } else {
+          // Ensure it's saved to localStorage for cache
+          saveUser(resolvedUser);
+        }
+
         const backendChat = await actor.getOrCreateChat(otherPrincipal);
 
-        // Convert and add to state
+        // Convert and add to state — BEFORE setting activeChatId
         const frontendChat = backendChatToFrontend(backendChat, chatId);
 
-        setChats((prev) => {
-          const exists = prev.some((c) => c.id === chatId);
-          if (exists) {
-            return prev.map((c) =>
-              c.id === chatId ? { ...c, ...frontendChat } : c,
-            );
+        // Use flushSync to guarantee state updates are committed synchronously
+        // before ChatWindow renders and tries to look up chat/user
+        flushSync(() => {
+          if (resolvedUser) {
+            setUsers((prev) => ({ ...prev, [otherUid]: resolvedUser! }));
           }
-          return [...prev, frontendChat];
+          setChats((prev) => {
+            const exists = prev.some((c) => c.id === chatId);
+            if (exists) {
+              return prev.map((c) =>
+                c.id === chatId ? { ...c, ...frontendChat } : c,
+              );
+            }
+            return [...prev, frontendChat];
+          });
+          setActiveGroupChatIdState(null);
         });
 
+        // Now set active chat — both chat and user are guaranteed in state
         setActiveChatId(chatId);
         return { chatId, isRequest: false };
       } catch {
@@ -994,6 +1183,415 @@ export function ChatProvider({
     [actor, fetchChats],
   );
 
+  // ─── Group chat functions ────────────────────────────────────────────────
+
+  const fetchGroupChats = useCallback(async () => {
+    if (!actor || isFetching) return;
+    try {
+      const backendGroups = await actor.getMyGroupChats();
+      const frontendGroups = backendGroups.map(backendGroupChatToFrontend);
+
+      // Fetch missing member profiles
+      const newUsers: Record<string, AppUser> = { ...getUsers() };
+      for (const group of backendGroups) {
+        for (const member of group.members) {
+          const uid = member.toString();
+          if (!newUsers[uid] && uid !== currentUid) {
+            try {
+              const profile = await actor.getUserProfile(member);
+              if (profile) {
+                const user = backendProfileToAppUser(profile);
+                newUsers[uid] = user;
+                saveUser(user);
+              }
+            } catch {
+              // ignore
+            }
+          }
+        }
+      }
+      setGroupChats(frontendGroups);
+      setUsers(newUsers);
+    } catch {
+      // silently fail
+    }
+  }, [actor, isFetching, currentUid]);
+
+  const fetchGroupMessages = useCallback(
+    async (groupId: string, afterTimestamp = 0n) => {
+      if (!actor || isFetching) return;
+      try {
+        const backendMessages = await actor.getGroupMessages(
+          groupId,
+          afterTimestamp,
+        );
+        if (backendMessages.length === 0) return;
+
+        const converted = backendMessages.map((m) =>
+          backendMsgToFrontend(m, groupId),
+        );
+
+        if (afterTimestamp === 0n) {
+          setGroupMessages((prev) => ({ ...prev, [groupId]: converted }));
+        } else {
+          const currentUsers = getUsers();
+
+          setGroupMessages((prev) => {
+            const existing = prev[groupId] ?? [];
+            const existingIds = new Set(existing.map((m) => m.id));
+            const newMsgs = converted.filter((m) => !existingIds.has(m.id));
+
+            // Fire notifications for new group messages from others
+            for (const msg of newMsgs) {
+              if (msg.senderId !== currentUid) {
+                const senderName =
+                  currentUsers[msg.senderId]?.username ?? "Someone";
+                const group = groupChatsRef.current.find(
+                  (g) => g.id === groupId,
+                );
+                const groupName = group?.name ?? "Group";
+                const msgType = msg.messageType as
+                  | "text"
+                  | "image"
+                  | "video"
+                  | "voice"
+                  | "file"
+                  | "gif";
+
+                const openGroup = () => {
+                  if (setActiveGroupChatIdRef.current) {
+                    setActiveGroupChatIdRef.current(groupId);
+                  }
+                };
+
+                // Browser notification
+                showGroupNotification(
+                  senderName,
+                  groupName,
+                  msg.text,
+                  groupId,
+                  msgType,
+                  activeGroupChatIdRef.current,
+                  openGroup,
+                );
+
+                // In-app toast (only when this group is not active)
+                if (activeGroupChatIdRef.current !== groupId) {
+                  const preview =
+                    msgType !== "text"
+                      ? msgType === "voice"
+                        ? "🎤 Voice message"
+                        : msgType === "image"
+                          ? "📷 Photo"
+                          : msgType === "video"
+                            ? "🎥 Video"
+                            : `📎 ${msgType}`
+                      : msg.text.length > 60
+                        ? `${msg.text.slice(0, 60)}…`
+                        : msg.text;
+
+                  toast(`💬 [${groupName}] ${senderName}: ${preview}`, {
+                    description: "Tap to open",
+                    duration: 4000,
+                    action: {
+                      label: "Open",
+                      onClick: openGroup,
+                    },
+                  });
+                }
+              }
+            }
+
+            // Also update existing messages with changes (seen, edit, delete, reactions)
+            const updatedExisting = existing.map((m) => {
+              const updated = converted.find((nm) => nm.id === m.id);
+              if (updated) {
+                const hasChanges =
+                  updated.seenBy.length > m.seenBy.length ||
+                  updated.deletedForEveryone !== m.deletedForEveryone ||
+                  updated.text !== m.text ||
+                  updated.edited !== m.edited ||
+                  Object.keys(updated.reactions).length !==
+                    Object.keys(m.reactions).length;
+                if (hasChanges) {
+                  return {
+                    ...m,
+                    seenBy: updated.seenBy,
+                    deletedForEveryone: updated.deletedForEveryone,
+                    text: updated.text,
+                    edited: updated.edited,
+                    editedAt: updated.editedAt,
+                    reactions: updated.reactions,
+                  };
+                }
+              }
+              return m;
+            });
+            if (
+              newMsgs.length === 0 &&
+              updatedExisting.every((m, i) => m === existing[i])
+            )
+              return prev;
+            return { ...prev, [groupId]: [...updatedExisting, ...newMsgs] };
+          });
+        }
+
+        const latestTs = backendMessages.reduce(
+          (max, m) => (m.createdAt > max ? m.createdAt : max),
+          afterTimestamp,
+        );
+        lastMessageTimestampRef.current[`group_${groupId}`] = latestTs;
+
+        // Update group last message
+        setGroupChats((prev) =>
+          prev.map((g) => {
+            if (g.id !== groupId) return g;
+            const last = converted.at(-1);
+            if (!last) return g;
+            const text = last.deletedForEveryone
+              ? "Message deleted"
+              : last.messageType !== "text"
+                ? `📎 ${last.messageType}`
+                : last.text;
+            return { ...g, lastMessage: text, lastUpdated: last.createdAt };
+          }),
+        );
+      } catch {
+        // silently fail
+      }
+    },
+    [actor, isFetching, currentUid],
+  );
+
+  // Poll group chats every 2s
+  useEffect(() => {
+    if (!actor || isFetching) return;
+    fetchGroupChats();
+    groupPollRef.current = setInterval(() => {
+      fetchGroupChats();
+    }, 1200);
+    return () => {
+      if (groupPollRef.current) clearInterval(groupPollRef.current);
+    };
+  }, [actor, isFetching, fetchGroupChats]);
+
+  // Poll active group messages every 800ms
+  useEffect(() => {
+    if (!actor || isFetching || !activeGroupChatId) return;
+
+    fetchGroupMessages(activeGroupChatId, 0n);
+
+    groupMsgPollRef.current = setInterval(() => {
+      const lastTs =
+        lastMessageTimestampRef.current[`group_${activeGroupChatId}`] ?? 0n;
+      fetchGroupMessages(activeGroupChatId, lastTs);
+    }, 500);
+
+    return () => {
+      if (groupMsgPollRef.current) clearInterval(groupMsgPollRef.current);
+    };
+  }, [actor, isFetching, activeGroupChatId, fetchGroupMessages]);
+
+  const setActiveGroupChatId = useCallback(
+    (id: string | null) => {
+      activeGroupChatIdRef.current = id;
+      setActiveGroupChatIdState(id);
+      if (id) {
+        lastMessageTimestampRef.current[`group_${id}`] = 0n;
+        // Clear DM chat when group chat is opened
+        activeChatIdRef.current = null;
+        setActiveChatIdState(null);
+        fetchGroupMessages(id, 0n);
+      }
+    },
+    [fetchGroupMessages],
+  );
+
+  // Keep refs in sync so polling callbacks can access latest values without stale closure
+  useEffect(() => {
+    groupChatsRef.current = groupChats;
+  }, [groupChats]);
+
+  useEffect(() => {
+    setActiveGroupChatIdRef.current = setActiveGroupChatId;
+  }, [setActiveGroupChatId]);
+
+  const createGroupChat = useCallback(
+    async (
+      name: string,
+      description: string,
+      memberIds: string[],
+    ): Promise<GroupChat | null> => {
+      if (!actor) return null;
+      try {
+        const principals = memberIds.map((uid) => Principal.fromText(uid));
+        const groupId = await actor.createGroupChat(
+          name,
+          description,
+          principals,
+        );
+
+        // Fetch the newly created group directly from the backend
+        // instead of relying on stale groupChats state
+        const backendGroup = await actor.getGroupById(groupId);
+        if (backendGroup) {
+          const frontendGroup = backendGroupChatToFrontend(backendGroup);
+          setGroupChats((prev) => {
+            const exists = prev.some((g) => g.id === groupId);
+            if (exists) {
+              return prev.map((g) => (g.id === groupId ? frontendGroup : g));
+            }
+            return [...prev, frontendGroup];
+          });
+          return frontendGroup;
+        }
+
+        // Fallback: trigger a full refresh and wait briefly
+        await fetchGroupChats();
+        // Give React state a moment to settle, then read from backend again
+        const allGroups = await actor.getMyGroupChats();
+        const found = allGroups.find((g) => g.id === groupId);
+        return found ? backendGroupChatToFrontend(found) : null;
+      } catch {
+        return null;
+      }
+    },
+    [actor, fetchGroupChats],
+  );
+
+  const sendGroupMessage = useCallback(
+    async (
+      groupId: string,
+      senderId: string,
+      text: string,
+      type: MessageType = "text",
+      extra?: Partial<Message>,
+    ): Promise<Message> => {
+      const optimisticId = `optimistic_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const optimisticMsg: Message = {
+        id: optimisticId,
+        chatId: groupId,
+        senderId,
+        text,
+        messageType: type,
+        createdAt: Date.now(),
+        seenBy: [senderId],
+        reactions: {},
+        edited: false,
+        deletedForEveryone: false,
+        deletedFor: [],
+        vanish: false,
+        mediaUrl: extra?.mediaUrl,
+        mediaName: extra?.mediaName,
+        replyTo: extra?.replyTo,
+        ...extra,
+      };
+
+      setGroupMessages((prev) => ({
+        ...prev,
+        [groupId]: [...(prev[groupId] ?? []), optimisticMsg],
+      }));
+      setGroupChats((prev) =>
+        prev.map((g) =>
+          g.id === groupId
+            ? {
+                ...g,
+                lastMessage: text || `📎 ${type}`,
+                lastUpdated: Date.now(),
+              }
+            : g,
+        ),
+      );
+
+      if (!actor) return optimisticMsg;
+
+      try {
+        const backendMsg = await actor.sendGroupMessage(
+          groupId,
+          text,
+          type,
+          extra?.mediaUrl ?? "",
+          extra?.replyTo ?? "",
+        );
+        const realMsg = backendMsgToFrontend(backendMsg, groupId);
+
+        setGroupMessages((prev) => {
+          const msgs = prev[groupId] ?? [];
+          const filtered = msgs.filter((m) => m.id !== optimisticId);
+          const exists = filtered.some((m) => m.id === realMsg.id);
+          return {
+            ...prev,
+            [groupId]: exists ? filtered : [...filtered, realMsg],
+          };
+        });
+
+        lastMessageTimestampRef.current[`group_${groupId}`] =
+          backendMsg.createdAt;
+        return realMsg;
+      } catch (err) {
+        setGroupMessages((prev) => ({
+          ...prev,
+          [groupId]: (prev[groupId] ?? []).filter((m) => m.id !== optimisticId),
+        }));
+        throw err;
+      }
+    },
+    [actor],
+  );
+
+  const markGroupSeen = useCallback(
+    async (groupId: string) => {
+      setGroupMessages((prev) => ({
+        ...prev,
+        [groupId]: (prev[groupId] ?? []).map((m) => ({
+          ...m,
+          seenBy: m.seenBy.includes(currentUid)
+            ? m.seenBy
+            : [...m.seenBy, currentUid],
+        })),
+      }));
+      if (!actor) return;
+      try {
+        await actor.markGroupMessagesSeen(groupId);
+      } catch {
+        // ignore
+      }
+    },
+    [actor, currentUid],
+  );
+
+  const leaveGroup = useCallback(
+    async (groupId: string) => {
+      if (!actor) return;
+      try {
+        await actor.leaveGroup(groupId);
+        setGroupChats((prev) => prev.filter((g) => g.id !== groupId));
+        if (activeGroupChatId === groupId) {
+          setActiveGroupChatIdState(null);
+        }
+      } catch {
+        // ignore
+      }
+    },
+    [actor, activeGroupChatId],
+  );
+
+  const setGroupTyping = useCallback(
+    (groupId: string, uid: string, isTyping: boolean) => {
+      setGroupChats((prev) =>
+        prev.map((g) =>
+          g.id === groupId
+            ? { ...g, typing: { ...g.typing, [uid]: isTyping } }
+            : g,
+        ),
+      );
+      if (actor) {
+        actor.setGroupTypingStatus(groupId, isTyping).catch(() => {});
+      }
+    },
+    [actor],
+  );
+
   // ─── Follow system ────────────────────────────────────────────────────────
 
   const refreshFollowRequests = useCallback(() => {
@@ -1144,17 +1742,76 @@ export function ChatProvider({
 
       if (actor) {
         try {
-          const results = await actor.searchUsersByUsernamePrefix(
-            prefix.trim(),
-          );
-          const appUsers: AppUser[] = results
+          const trimmed = prefix.trim();
+          const lower = trimmed.toLowerCase();
+          const upper = trimmed.toUpperCase();
+          const capitalized =
+            trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+
+          // Try multiple casings in parallel to handle case-insensitive search
+          // since the backend does case-sensitive prefix matching.
+          // Also use searchUsersByUsername (contains) as a fallback.
+          const [
+            prefixResults,
+            lowerResults,
+            upperResults,
+            capResults,
+            containsResults,
+          ] = await Promise.allSettled([
+            actor.searchUsersByUsernamePrefix(trimmed),
+            lower !== trimmed
+              ? actor.searchUsersByUsernamePrefix(lower)
+              : Promise.resolve([]),
+            upper !== trimmed
+              ? actor.searchUsersByUsernamePrefix(upper)
+              : Promise.resolve([]),
+            capitalized !== trimmed &&
+            capitalized !== lower &&
+            capitalized !== upper
+              ? actor.searchUsersByUsernamePrefix(capitalized)
+              : Promise.resolve([]),
+            actor.searchUsersByUsername(trimmed),
+          ]);
+
+          // Merge all results, deduplicating by uid
+          const seen = new Set<string>();
+          const merged: import("../backend.d").UserProfile[] = [];
+          for (const res of [
+            prefixResults,
+            lowerResults,
+            upperResults,
+            capResults,
+            containsResults,
+          ]) {
+            if (res.status === "fulfilled") {
+              for (const p of res.value) {
+                const uid = p._id.toString();
+                if (!seen.has(uid)) {
+                  seen.add(uid);
+                  merged.push(p);
+                }
+              }
+            }
+          }
+
+          const appUsers: AppUser[] = merged
             .filter((p) => p._id.toString() !== excludeUid)
             .map((profile) => {
               const user = backendProfileToAppUser(profile);
-              // Cache in local storage
               saveUser(user);
               return user;
             });
+
+          // Sort: exact matches first, then prefix matches, then contains
+          const tl = trimmed.toLowerCase();
+          appUsers.sort((a, b) => {
+            const al = a.username.toLowerCase();
+            const bl = b.username.toLowerCase();
+            const aExact = al === tl ? 0 : al.startsWith(tl) ? 1 : 2;
+            const bExact = bl === tl ? 0 : bl.startsWith(tl) ? 1 : 2;
+            if (aExact !== bExact) return aExact - bExact;
+            return al.localeCompare(bl);
+          });
 
           // Update users state
           setUsers((prev) => {
@@ -1186,6 +1843,16 @@ export function ChatProvider({
         notifications,
         activeChatId,
         setActiveChatId,
+        // Group chats
+        groupChats,
+        groupMessages,
+        activeGroupChatId,
+        setActiveGroupChatId,
+        createGroupChat,
+        sendGroupMessage,
+        markGroupSeen,
+        leaveGroup,
+        setGroupTyping,
         sendMessage,
         editMessage,
         deleteMessageForEveryone,

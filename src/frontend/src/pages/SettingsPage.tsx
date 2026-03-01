@@ -20,19 +20,24 @@ import {
   Archive,
   ArrowLeft,
   Bell,
+  Calendar,
   ChevronRight,
+  Globe,
+  Link2,
   Loader2,
   Lock,
   LogOut,
   MessageSquare,
   Moon,
+  Phone,
   Save,
   Sun,
   Trash2,
+  User,
   UserX,
 } from "lucide-react";
 import type React from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { UserAvatar } from "../components/chat/UserAvatar";
 import { useAuth } from "../contexts/AuthContext";
@@ -42,6 +47,16 @@ import { useTheme } from "../contexts/ThemeContext";
 export function SettingsPage() {
   const navigate = useNavigate();
   const { currentUser, logout, deleteAccount, updateProfile } = useAuth();
+
+  // Enable scrolling on sub-page
+  useEffect(() => {
+    document.body.classList.add("page-subpage");
+    document.getElementById("root")?.classList.add("page-subpage");
+    return () => {
+      document.body.classList.remove("page-subpage");
+      document.getElementById("root")?.classList.remove("page-subpage");
+    };
+  }, []);
   const { users, refreshChats } = useChat();
   const { theme, toggleTheme } = useTheme();
 
@@ -49,6 +64,14 @@ export function SettingsPage() {
   const [profilePicture, setProfilePicture] = useState(
     currentUser?.profilePicture ?? "",
   );
+  const [fullName, setFullName] = useState(currentUser?.fullName ?? "");
+  const [phoneNumber, setPhoneNumber] = useState(
+    currentUser?.phoneNumber ?? "",
+  );
+  const [birthDate, setBirthDate] = useState(currentUser?.birthDate ?? "");
+  const [timezone, setTimezone] = useState(currentUser?.timezone ?? "");
+  const [websiteUrl, setWebsiteUrl] = useState(currentUser?.websiteUrl ?? "");
+
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -71,6 +94,11 @@ export function SettingsPage() {
     await updateProfile({
       bio: bio.trim(),
       profilePicture: profilePicture.trim(),
+      fullName: fullName.trim(),
+      phoneNumber: phoneNumber.trim(),
+      birthDate: birthDate.trim(),
+      timezone: timezone.trim(),
+      websiteUrl: websiteUrl.trim(),
     });
     setIsSaving(false);
     toast.success("Settings saved");
@@ -85,7 +113,6 @@ export function SettingsPage() {
     setIsDeleting(true);
     const result = await deleteAccount();
     setIsDeleting(false);
-
     if (result.error) {
       toast.error(result.error);
     } else {
@@ -114,16 +141,16 @@ export function SettingsPage() {
         </h1>
         <Button
           size="sm"
-          className="rounded-xl gap-1.5"
+          className="rounded-xl gap-1.5 gradient-btn"
           onClick={handleSave}
           disabled={isSaving}
         >
           {isSaving ? (
-            <Loader2 size={14} className="animate-spin" />
+            <Loader2 size={14} className="animate-spin text-white" />
           ) : (
-            <Save size={14} />
+            <Save size={14} className="text-white" />
           )}
-          Save
+          <span className="text-white">Save</span>
         </Button>
       </div>
 
@@ -141,8 +168,13 @@ export function SettingsPage() {
             size="lg"
           />
           <div className="flex-1 text-left">
-            <p className="font-bold">@{currentUser?.username}</p>
-            <p className="text-sm text-muted-foreground mt-0.5">
+            <p className="font-bold text-base">@{currentUser?.username}</p>
+            {currentUser?.fullName && (
+              <p className="text-sm text-foreground/70">
+                {currentUser.fullName}
+              </p>
+            )}
+            <p className="text-sm text-muted-foreground mt-0.5 truncate">
               {currentUser?.bio || "No bio yet"}
             </p>
           </div>
@@ -151,35 +183,115 @@ export function SettingsPage() {
 
         <Separator />
 
-        {/* Profile editing */}
-        <SettingSection title="Profile">
+        {/* Personal Info section */}
+        <SettingSection title="Personal Info">
           <div className="px-5 pb-4 space-y-4">
-            <div className="space-y-1.5">
-              <Label className="text-sm font-semibold">Bio</Label>
-              <Textarea
-                value={bio}
-                onChange={(e) => setBio(e.target.value)}
-                placeholder="Tell people about yourself..."
-                rows={3}
-                maxLength={160}
-                className="rounded-xl resize-none text-sm"
-              />
-              <p className="text-xs text-muted-foreground text-right">
-                {bio.length}/160
-              </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                  <User size={11} /> Full Name
+                </Label>
+                <Input
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Your full name"
+                  className="rounded-xl text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                  <Phone size={11} /> Phone Number
+                </Label>
+                <Input
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  placeholder="+1 234 567 890"
+                  className="rounded-xl text-sm"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                  <Calendar size={11} /> Birth Date
+                </Label>
+                <Input
+                  type="date"
+                  value={birthDate}
+                  onChange={(e) => setBirthDate(e.target.value)}
+                  className="rounded-xl text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                  <Globe size={11} /> Timezone
+                </Label>
+                <Input
+                  value={timezone}
+                  onChange={(e) => setTimezone(e.target.value)}
+                  placeholder="UTC, EST, PST..."
+                  className="rounded-xl text-sm"
+                />
+              </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-sm font-semibold">Avatar URL</Label>
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                <Link2 size={11} /> Website URL
+              </Label>
               <Input
-                value={profilePicture}
-                onChange={(e) => setProfilePicture(e.target.value)}
-                placeholder="https://..."
+                value={websiteUrl}
+                onChange={(e) => setWebsiteUrl(e.target.value)}
+                placeholder="https://yoursite.com"
                 className="rounded-xl text-sm"
               />
-              <p className="text-xs text-muted-foreground">
-                Paste a URL for your profile picture
-              </p>
             </div>
+          </div>
+        </SettingSection>
+
+        <Separator />
+
+        {/* Bio section */}
+        <SettingSection title="Bio">
+          <div className="px-5 pb-4 space-y-2">
+            <Textarea
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              placeholder="Tell people about yourself..."
+              rows={3}
+              maxLength={160}
+              className="rounded-xl resize-none text-sm"
+            />
+            <p className="text-xs text-muted-foreground text-right">
+              {bio.length}/160
+            </p>
+          </div>
+        </SettingSection>
+
+        <Separator />
+
+        {/* Avatar section */}
+        <SettingSection title="Profile Picture">
+          <div className="px-5 pb-4 space-y-2">
+            <div className="flex items-center gap-3 mb-3">
+              <UserAvatar
+                src={profilePicture || currentUser?.profilePicture}
+                username={currentUser?.username ?? "?"}
+                size="lg"
+                showOnline={false}
+              />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-muted-foreground mb-1">Preview</p>
+              </div>
+            </div>
+            <Input
+              value={profilePicture}
+              onChange={(e) => setProfilePicture(e.target.value)}
+              placeholder="https://..."
+              className="rounded-xl text-sm"
+            />
+            <p className="text-xs text-muted-foreground">
+              Paste a URL for your profile picture
+            </p>
           </div>
         </SettingSection>
 

@@ -16,12 +16,15 @@ import {
   User,
 } from "lucide-react";
 import type React from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { ChatWindow } from "../components/chat/ChatWindow";
+import { GroupChatWindow } from "../components/chat/GroupChatWindow";
 import { Sidebar } from "../components/chat/Sidebar";
 import { UserAvatar } from "../components/chat/UserAvatar";
 import { useAuth } from "../contexts/AuthContext";
 import { useChat } from "../contexts/ChatContext";
+import { useNotificationPermission } from "../hooks/useNotificationPermission";
 
 interface NavItem {
   icon: React.ReactNode;
@@ -32,13 +35,57 @@ interface NavItem {
 }
 
 export function HomePage() {
-  const { activeChatId, setActiveChatId, unreadCount } = useChat();
+  const {
+    activeChatId,
+    setActiveChatId,
+    unreadCount,
+    activeGroupChatId,
+    setActiveGroupChatId,
+    groupChats,
+  } = useChat();
   const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  const { requestPermission, isSupported, markAsked } =
+    useNotificationPermission();
+
+  // Show notification permission prompt on first visit (if not yet asked)
+  // Run once on mount — check localStorage directly to avoid dependency on hook state
+  useEffect(() => {
+    const notifSupported = typeof Notification !== "undefined" && isSupported;
+    if (!notifSupported) return;
+    const alreadyAskedNow =
+      localStorage.getItem("notificationPermissionAsked") === "true";
+    if (alreadyAskedNow) return;
+    const currentPermission =
+      typeof Notification !== "undefined" ? Notification.permission : "denied";
+    if (currentPermission === "granted" || currentPermission === "denied")
+      return;
+
+    const timer = setTimeout(() => {
+      markAsked();
+      toast(
+        <NotificationPromptToast
+          onEnable={() => {
+            requestPermission();
+            toast.dismiss("notif-permission");
+          }}
+          onDismiss={() => toast.dismiss("notif-permission")}
+        />,
+        { duration: 12000, id: "notif-permission" },
+      );
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [isSupported, markAsked, requestPermission]);
 
   const handleChatSelect = (chatId: string) => {
     setActiveChatId(chatId);
+    setMobileChatOpen(true);
+  };
+
+  const handleGroupSelect = (groupId: string) => {
+    setActiveGroupChatId(groupId);
     setMobileChatOpen(true);
   };
 
@@ -165,7 +212,10 @@ export function HomePage() {
             mobileChatOpen ? "hidden md:flex" : "flex",
           )}
         >
-          <Sidebar onChatSelect={handleChatSelect} />
+          <Sidebar
+            onChatSelect={handleChatSelect}
+            onGroupSelect={handleGroupSelect}
+          />
 
           {/* Mobile bottom nav */}
           <div className="md:hidden flex items-center justify-around border-t border-border bg-background px-2 py-2 safe-bottom">
@@ -200,7 +250,16 @@ export function HomePage() {
             mobileChatOpen ? "flex" : "hidden md:flex",
           )}
         >
-          {activeChatId ? (
+          {activeGroupChatId ? (
+            (() => {
+              const group = groupChats.find((g) => g.id === activeGroupChatId);
+              return group ? (
+                <GroupChatWindow group={group} onBack={handleBack} />
+              ) : (
+                <EmptyState />
+              );
+            })()
+          ) : activeChatId ? (
             <ChatWindow chatId={activeChatId} onBack={handleBack} />
           ) : (
             <EmptyState />
@@ -208,6 +267,40 @@ export function HomePage() {
         </div>
       </div>
     </TooltipProvider>
+  );
+}
+
+// ─── Notification permission toast component ──────────────────────────────────
+function NotificationPromptToast({
+  onEnable,
+  onDismiss,
+}: {
+  onEnable: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="font-semibold text-sm">🔔 Enable notifications</p>
+      <p className="text-xs text-muted-foreground">
+        Get notified when friends message you
+      </p>
+      <div className="flex gap-2 mt-1">
+        <button
+          type="button"
+          onClick={onEnable}
+          className="flex-1 text-xs bg-primary text-primary-foreground rounded-lg py-1.5 px-3 font-semibold hover:opacity-90 transition-opacity"
+        >
+          Enable
+        </button>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="flex-1 text-xs bg-muted text-muted-foreground rounded-lg py-1.5 px-3 font-medium hover:opacity-80 transition-opacity"
+        >
+          Not now
+        </button>
+      </div>
+    </div>
   );
 }
 

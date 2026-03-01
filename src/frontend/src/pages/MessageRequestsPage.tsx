@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, Check, MessageSquare, X } from "lucide-react";
-import React from "react";
+import { useEffect } from "react";
 import { toast } from "sonner";
 import { UserAvatar } from "../components/chat/UserAvatar";
 import { useAuth } from "../contexts/AuthContext";
@@ -12,6 +12,16 @@ export function MessageRequestsPage() {
   const { requests, users, acceptRequest, declineRequest, setActiveChatId } =
     useChat();
   const { currentUser } = useAuth();
+
+  // Enable scrolling on sub-page
+  useEffect(() => {
+    document.body.classList.add("page-subpage");
+    document.getElementById("root")?.classList.add("page-subpage");
+    return () => {
+      document.body.classList.remove("page-subpage");
+      document.getElementById("root")?.classList.remove("page-subpage");
+    };
+  }, []);
 
   const pendingRequests = requests.filter(
     (r) => r.receiverId === currentUser?.uid && r.status === "pending",
@@ -30,7 +40,7 @@ export function MessageRequestsPage() {
   };
 
   return (
-    <div className="min-h-dvh bg-background page-fade">
+    <div className="min-h-dvh bg-background page-fade overflow-y-auto">
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-border sticky top-0 bg-background/95 backdrop-blur-sm z-10 shadow-sm">
         <Button

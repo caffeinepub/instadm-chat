@@ -3,6 +3,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -16,20 +22,23 @@ import {
   Pin,
   Search,
   UserPlus,
+  Users2,
 } from "lucide-react";
 import React, { useState, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
 import { hasPendingRequest } from "../../services/followService";
-import type { AppUser, Chat } from "../../types";
+import type { AppUser, Chat, GroupChat } from "../../types";
+import { CreateGroupModal } from "./CreateGroupModal";
 import { UserAvatar } from "./UserAvatar";
 
 interface SidebarProps {
   onChatSelect?: (chatId: string) => void;
+  onGroupSelect?: (groupId: string) => void;
 }
 
-export function Sidebar({ onChatSelect }: SidebarProps) {
+export function Sidebar({ onChatSelect, onGroupSelect }: SidebarProps) {
   const navigate = useNavigate();
   const {
     chats,
@@ -44,12 +53,17 @@ export function Sidebar({ onChatSelect }: SidebarProps) {
     sendFollowRequest,
     acceptFollowRequest,
     declineFollowRequest,
+    groupChats,
+    groupMessages,
+    activeGroupChatId,
+    setActiveGroupChatId,
   } = useChat();
   const { currentUser } = useAuth();
 
   const [search, setSearch] = useState("");
   const [userResults, setUserResults] = useState<AppUser[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currentUid = currentUser!.uid;
@@ -91,6 +105,14 @@ export function Sidebar({ onChatSelect }: SidebarProps) {
     [setActiveChatId, onChatSelect],
   );
 
+  const handleSelectGroup = useCallback(
+    (groupId: string) => {
+      setActiveGroupChatId(groupId);
+      onGroupSelect?.(groupId);
+    },
+    [setActiveGroupChatId, onGroupSelect],
+  );
+
   const handleUserClick = useCallback(
     async (user: AppUser) => {
       // Check if private account and not a follower
@@ -110,7 +132,11 @@ export function Sidebar({ onChatSelect }: SidebarProps) {
       }
 
       try {
-        const { chatId, isRequest } = await openChat(currentUid, user.uid);
+        const { chatId, isRequest } = await openChat(
+          currentUid,
+          user.uid,
+          user,
+        );
         setSearch("");
         setUserResults([]);
         if (!isRequest) {
@@ -149,6 +175,22 @@ export function Sidebar({ onChatSelect }: SidebarProps) {
 
   const isSearchMode = !!search.trim();
 
+  // Unified list: DM chats + group chats sorted by lastUpdated
+  const allChatItems = [
+    ...regularChats.map((c) => ({
+      type: "dm" as const,
+      id: c.id,
+      updatedAt: c.lastUpdated,
+      data: c,
+    })),
+    ...groupChats.map((g) => ({
+      type: "group" as const,
+      id: g.id,
+      updatedAt: g.lastUpdated,
+      data: g,
+    })),
+  ].sort((a, b) => b.updatedAt - a.updatedAt);
+
   return (
     <div className="flex flex-col h-full bg-sidebar border-r border-sidebar-border">
       {/* Header */}
@@ -160,17 +202,40 @@ export function Sidebar({ onChatSelect }: SidebarProps) {
           Messages
         </h1>
         <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="w-8 h-8 rounded-xl text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
-            onClick={() => {
-              document.getElementById("sidebar-search")?.focus();
-            }}
-            title="New chat"
-          >
-            <Edit size={15} />
-          </Button>
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="w-8 h-8 rounded-xl text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
+                  onClick={() => setShowCreateGroup(true)}
+                >
+                  <Users2 size={15} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">
+                New Group
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="w-8 h-8 rounded-xl text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
+                  onClick={() => {
+                    document.getElementById("sidebar-search")?.focus();
+                  }}
+                >
+                  <Edit size={15} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">
+                New Chat
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
       </div>
 
@@ -299,7 +364,7 @@ export function Sidebar({ onChatSelect }: SidebarProps) {
 
           <TabsContent value="chats" className="flex-1 min-h-0 mt-0">
             <ScrollArea className="h-full">
-              {/* Pinned */}
+              {/* Pinned DM chats */}
               {pinnedChats.length > 0 && (
                 <div className="mb-1">
                   <p className="text-[10px] text-muted-foreground px-4 py-1.5 font-semibold uppercase tracking-widest flex items-center gap-1.5">
@@ -319,20 +384,35 @@ export function Sidebar({ onChatSelect }: SidebarProps) {
                 </div>
               )}
 
-              {/* Regular chats */}
-              {regularChats.map((chat) => (
-                <ChatListItem
-                  key={chat.id}
-                  chat={chat}
-                  users={users}
-                  currentUid={currentUid}
-                  messages={messages[chat.id] ?? []}
-                  isActive={activeChatId === chat.id}
-                  onClick={() => handleSelectChat(chat.id)}
-                />
-              ))}
+              {/* Combined: DM chats + Group chats sorted by recency */}
+              {allChatItems.map((item) => {
+                if (item.type === "group") {
+                  return (
+                    <GroupListItem
+                      key={`group_${item.id}`}
+                      group={item.data as GroupChat}
+                      users={users}
+                      currentUid={currentUid}
+                      messages={groupMessages[item.id] ?? []}
+                      isActive={activeGroupChatId === item.id}
+                      onClick={() => handleSelectGroup(item.id)}
+                    />
+                  );
+                }
+                return (
+                  <ChatListItem
+                    key={item.id}
+                    chat={item.data as Chat}
+                    users={users}
+                    currentUid={currentUid}
+                    messages={messages[item.id] ?? []}
+                    isActive={activeChatId === item.id}
+                    onClick={() => handleSelectChat(item.id)}
+                  />
+                );
+              })}
 
-              {myChats.length === 0 && (
+              {myChats.length === 0 && groupChats.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-16 px-8 gap-4">
                   <div className="w-14 h-14 rounded-2xl bg-muted flex items-center justify-center">
                     <MessageSquare
@@ -344,7 +424,7 @@ export function Sidebar({ onChatSelect }: SidebarProps) {
                   <div className="text-center">
                     <p className="text-sm font-semibold">No conversations</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Search for a friend by username to start chatting
+                      Search for a friend or create a group to start chatting
                     </p>
                   </div>
                 </div>
@@ -492,7 +572,84 @@ export function Sidebar({ onChatSelect }: SidebarProps) {
           </TabsContent>
         </Tabs>
       )}
+      {/* Create Group Modal */}
+      <CreateGroupModal
+        open={showCreateGroup}
+        onClose={() => setShowCreateGroup(false)}
+        onGroupCreated={(group) => {
+          handleSelectGroup(group.id);
+        }}
+      />
     </div>
+  );
+}
+
+function GroupListItem({
+  group,
+  currentUid,
+  messages,
+  isActive,
+  onClick,
+}: {
+  group: GroupChat;
+  users?: Record<string, AppUser>;
+  currentUid: string;
+  messages: import("../../types").Message[];
+  isActive: boolean;
+  onClick: () => void;
+}) {
+  const unread = messages.filter(
+    (m) => m.senderId !== currentUid && !m.seenBy.includes(currentUid),
+  ).length;
+
+  const lastMsg = messages.at(-1);
+  const lastMsgText = lastMsg?.deletedForEveryone
+    ? "Message deleted"
+    : lastMsg?.messageType !== "text" && lastMsg?.messageType
+      ? `📎 ${lastMsg.messageType}`
+      : (lastMsg?.text ?? group.lastMessage ?? "");
+
+  const time = group.lastUpdated ? formatTime(group.lastUpdated) : "";
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "w-full flex items-center gap-3 px-4 py-2.5 transition-colors text-left relative",
+        isActive ? "chat-item-active" : "hover:bg-sidebar-accent/50",
+      )}
+    >
+      {/* Group icon */}
+      <div className="relative flex-shrink-0">
+        <div className="w-10 h-10 rounded-full group-icon-gradient flex items-center justify-center">
+          <Users2 size={18} className="text-white" />
+        </div>
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-1">
+          <p className="text-sm font-medium truncate flex items-center gap-1.5">
+            {group.name}
+            <span className="text-[9px] bg-muted text-muted-foreground px-1 py-0.5 rounded font-semibold">
+              GROUP
+            </span>
+          </p>
+          <span className="text-[10px] text-muted-foreground flex-shrink-0">
+            {time}
+          </span>
+        </div>
+        <div className="flex items-center gap-1 mt-0.5">
+          <p className="text-xs truncate flex-1 text-muted-foreground">
+            {lastMsgText || `${group.members.length} members`}
+          </p>
+          {unread > 0 && (
+            <span className="flex-shrink-0 min-w-[18px] h-[18px] bg-primary text-primary-foreground rounded-full text-[10px] font-bold flex items-center justify-center px-1 badge-pop">
+              {unread > 9 ? "9+" : unread}
+            </span>
+          )}
+        </div>
+      </div>
+    </button>
   );
 }
 

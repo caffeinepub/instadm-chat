@@ -90,6 +90,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   typeof profile.createdAt === "bigint"
                     ? Number(profile.createdAt / BigInt(1_000_000))
                     : Date.now(),
+                fullName: profile.fullName || "",
+                phoneNumber: profile.phoneNumber || "",
+                birthDate: profile.birthDate || "",
+                timezone: profile.timezone || "",
+                websiteUrl: profile.websiteUrl || "",
               };
               saveUser(user);
               setCurrentUser(user);
@@ -146,6 +151,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             typeof profile.createdAt === "bigint"
               ? Number(profile.createdAt / BigInt(1_000_000))
               : Date.now(),
+          fullName: profile.fullName || "",
+          phoneNumber: profile.phoneNumber || "",
+          birthDate: profile.birthDate || "",
+          timezone: profile.timezone || "",
+          websiteUrl: profile.websiteUrl || "",
         };
         saveUser(user);
         saveSession({ uid, username: user.username });
@@ -221,6 +231,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           phoneNumber: "",
           birthDate: "",
           timezone: "",
+          websiteUrl: "",
         });
 
         const user: AppUser = {
@@ -297,7 +308,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             _id: principal,
             username: updated.username,
             bio: updated.bio,
-            email: updated.email,
+            email: updated.email || "",
             profilePicture: updated.profilePicture,
             isPrivate: updated.isPrivate,
             onlineStatus: updated.onlineStatus,
@@ -307,10 +318,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             followers: [],
             following: [],
             fcmToken: "",
-            fullName: "",
-            phoneNumber: "",
-            birthDate: "",
-            timezone: "",
+            fullName: updated.fullName || "",
+            phoneNumber: updated.phoneNumber || "",
+            birthDate: updated.birthDate || "",
+            timezone: updated.timezone || "",
+            websiteUrl: updated.websiteUrl || "",
           })
           .catch(() => {});
       }

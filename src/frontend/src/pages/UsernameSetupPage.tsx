@@ -7,14 +7,66 @@ import type React from "react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useAuth } from "../contexts/AuthContext";
+import { useNotificationPermission } from "../hooks/useNotificationPermission";
+
+function NotifPromptToast({
+  onEnable,
+  onDismiss,
+}: {
+  onEnable: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="font-semibold text-sm">🔔 Enable notifications</p>
+      <p className="text-xs text-muted-foreground">
+        Get notified when friends message you
+      </p>
+      <div className="flex gap-2 mt-1">
+        <button
+          type="button"
+          onClick={onEnable}
+          className="flex-1 text-xs bg-primary text-primary-foreground rounded-lg py-1.5 px-3 font-semibold hover:opacity-90 transition-opacity"
+        >
+          Enable
+        </button>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="flex-1 text-xs bg-muted text-muted-foreground rounded-lg py-1.5 px-3 font-medium hover:opacity-80 transition-opacity"
+        >
+          Not now
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function UsernameSetupPage() {
   const { setupUsername, logout } = useAuth();
   const [username, setUsername] = useState("");
   const [bio, setBio] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const { permission, requestPermission, isSupported, markAsked } =
+    useNotificationPermission();
 
   const isValidUsername = /^[a-zA-Z0-9_]{3,20}$/.test(username);
+
+  const showNotificationPrompt = () => {
+    if (!isSupported || permission === "granted" || permission === "denied")
+      return;
+    markAsked();
+    toast(
+      <NotifPromptToast
+        onEnable={() => {
+          requestPermission();
+          toast.dismiss("notif-permission");
+        }}
+        onDismiss={() => toast.dismiss("notif-permission")}
+      />,
+      { duration: 12000, id: "notif-permission" },
+    );
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,6 +78,8 @@ export function UsernameSetupPage() {
       toast.error(result.error);
     } else {
       toast.success("Welcome to Linkr!");
+      // Show notification permission prompt after a short delay
+      setTimeout(showNotificationPrompt, 1500);
     }
   };
 

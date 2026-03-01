@@ -12,6 +12,16 @@ export interface AppUser {
   followers: string[];
   following: string[];
   createdAt: number;
+  // Extended profile fields
+  fullName?: string;
+  phoneNumber?: string;
+  birthDate?: string;
+  timezone?: string;
+  websiteUrl?: string;
+  personalityType?: string;
+  relationshipStatus?: string;
+  lifestyle?: string[];
+  wellbeing?: string[];
 }
 
 // ─── Message ─────────────────────────────────────────────────────────────────
@@ -83,6 +93,19 @@ export interface AuthSession {
   email: string;
   emailVerified: boolean;
   username: string;
+}
+
+// ─── Group Chat ───────────────────────────────────────────────────────────────
+export interface GroupChat {
+  id: string;
+  name: string;
+  description: string;
+  adminId: string; // uid
+  members: string[]; // uids
+  createdAt: number;
+  lastMessage: string;
+  lastUpdated: number;
+  typing: Record<string, boolean>;
 }
 
 // ─── Context types ─────────────────────────────────────────────────────────────

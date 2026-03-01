@@ -1,89 +1,69 @@
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import { Principal } from "@icp-sdk/core/principal";
 import {
-  Archive,
   ArrowLeft,
   Image,
   Info,
   Loader2,
+  LogOut,
   Mic,
   MicOff,
   MoreHorizontal,
-  Pin,
-  Search,
   Send,
   Square,
-  VolumeX,
-  Zap,
+  Users,
+  X,
 } from "lucide-react";
-import React, {
-  useState,
-  useRef,
-  useEffect,
-  useCallback,
-  useMemo,
-} from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
-import { useActor } from "../../hooks/useActor";
-import { saveUser } from "../../services/chatService";
-import { backendProfileToAppUser } from "../../services/profileService";
-import type { Message } from "../../types";
+import type { GroupChat, Message } from "../../types";
 import { EmojiPicker } from "./EmojiPicker";
-import { ForwardModal } from "./ForwardModal";
 import { MessageBubble } from "./MessageBubble";
 import { TypingIndicator } from "./TypingIndicator";
 import { UserAvatar } from "./UserAvatar";
 
-interface ChatWindowProps {
-  chatId: string;
+interface GroupChatWindowProps {
+  group: GroupChat;
   onBack?: () => void;
 }
 
-export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
+export function GroupChatWindow({ group, onBack }: GroupChatWindowProps) {
   const {
-    chats,
-    messages: allMessages,
+    groupMessages: allGroupMessages,
     users,
-    sendMessage,
+    sendGroupMessage,
+    markGroupSeen,
+    leaveGroup,
+    setGroupTyping,
     editMessage,
     deleteMessageForEveryone,
-    deleteMessageForMe,
     reactToMessage,
-    forwardMessage,
-    markSeen,
-    setTyping,
-    togglePin,
-    toggleArchive,
-    toggleMute,
-    toggleVanishMode,
-    refreshChats,
   } = useChat();
   const { currentUser } = useAuth();
-  const { actor } = useActor();
 
   const [inputText, setInputText] = useState("");
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
-  const [forwardingMessage, setForwardingMessage] = useState<Message | null>(
-    null,
-  );
-  const [showForwardModal, setShowForwardModal] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const [showInfo, setShowInfo] = useState(false);
 
   // Voice recording state
   const [isRecording, setIsRecording] = useState(false);
@@ -98,101 +78,20 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const currentUid = currentUser!.uid;
+  const groupMsgs = allGroupMessages[group.id] ?? [];
 
-  // Derive otherUid from chatId (format: sorted uid1_uid2)
-  // chatId = [uid1, uid2].sort().join("_")
-  // We need to find which part is NOT the currentUid
-  const otherUid = useMemo(() => {
-    const chat = chats.find((c) => c.id === chatId);
-    if (chat) {
-      return chat.participants.find((p) => p !== currentUid) ?? "";
-    }
-    // Fallback: chatId is uid1_uid2 (sorted). We try to determine otherUid.
-    // Since UIDs are Principal texts (contain hyphens, no underscores),
-    // the chatId join char is "_". We look for currentUid inside chatId.
-    if (chatId.includes(currentUid)) {
-      return chatId.replace(currentUid, "").replace(/^_|_$/, "");
-    }
-    return "";
-  }, [chats, chatId, currentUid]);
-
-  const chat = chats.find((c) => c.id === chatId);
-  const otherUser = users[otherUid];
-  const chatMessages = allMessages[chatId] ?? [];
-
-  // ─── Self-healing: fetch missing chat/user from backend ──────────────────
-  const healingRef = useRef(false);
-  useEffect(() => {
-    if (chat && otherUser) return; // Already resolved
-    if (!actor || !chatId || !otherUid || healingRef.current) return;
-
-    healingRef.current = true;
-
-    const heal = async () => {
-      try {
-        const otherPrincipal = Principal.fromText(otherUid);
-
-        // Step 1: Fetch other user's profile if missing
-        if (!otherUser) {
-          try {
-            const profile = await actor.getUserProfile(otherPrincipal);
-            if (profile) {
-              const appUser = backendProfileToAppUser(profile);
-              saveUser(appUser);
-            }
-          } catch {
-            // ignore
-          }
-        }
-
-        // Step 2: Ensure chat exists on backend
-        if (!chat) {
-          try {
-            await actor.getOrCreateChat(otherPrincipal);
-          } catch {
-            // ignore
-          }
-        }
-
-        // Step 3: Refresh chats + users from backend
-        refreshChats();
-      } catch {
-        // ignore
-      } finally {
-        // Allow retry after a delay
-        setTimeout(() => {
-          healingRef.current = false;
-        }, 1000);
-      }
-    };
-
-    const timer = setTimeout(heal, 100);
-    return () => clearTimeout(timer);
-  }, [chat, otherUser, chatId, otherUid, actor, refreshChats]);
-
-  // Reset healing flag when chatId changes
-  // biome-ignore lint/correctness/useExhaustiveDependencies: chatId change should reset healing
-  useEffect(() => {
-    healingRef.current = false;
-  }, [chatId]);
-
-  const isBlocked = currentUser?.blockedUsers?.includes(otherUid) || false;
-  const isBlockedByOther =
-    otherUser?.blockedUsers?.includes(currentUid) || false;
-
-  // Mark as seen when window opens or new messages arrive
+  // Mark seen when window opens or new messages arrive
   // biome-ignore lint/correctness/useExhaustiveDependencies: length-only dep is intentional
   useEffect(() => {
-    markSeen(chatId, currentUid);
-  }, [chatId, currentUid, markSeen, chatMessages.length]);
+    markGroupSeen(group.id);
+  }, [group.id, markGroupSeen, groupMsgs.length]);
 
   // Scroll to bottom on new message
   // biome-ignore lint/correctness/useExhaustiveDependencies: length-only dep is intentional
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatMessages.length]);
+  }, [groupMsgs.length]);
 
-  // Cleanup recording on unmount
   useEffect(() => {
     return () => {
       if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
@@ -204,28 +103,13 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
     };
   }, []);
 
-  // Vanish mode: delete seen messages after 5s
-  useEffect(() => {
-    if (!chat?.vanishMode) return;
-    const timers: ReturnType<typeof setTimeout>[] = [];
-    for (const msg of chatMessages) {
-      if (msg.seenBy.length >= 2 && !msg.deletedForEveryone && !msg.vanish) {
-        const t = setTimeout(() => {
-          deleteMessageForEveryone(chatId, msg.id);
-        }, 5000);
-        timers.push(t);
-      }
-    }
-    return () => timers.forEach(clearTimeout);
-  }, [chat?.vanishMode, chatMessages, chatId, deleteMessageForEveryone]);
-
   const handleSend = useCallback(async () => {
     const text = inputText.trim();
     if (!text || isSending) return;
 
     if (editingMessage) {
       try {
-        await editMessage(chatId, editingMessage.id, text);
+        await editMessage(group.id, editingMessage.id, text);
         setEditingMessage(null);
       } catch {
         toast.error("Failed to edit message");
@@ -233,7 +117,7 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
     } else {
       setIsSending(true);
       try {
-        await sendMessage(chatId, currentUid, text, "text", {
+        await sendGroupMessage(group.id, currentUid, text, "text", {
           replyTo: replyToMessage?.id,
         });
         setReplyToMessage(null);
@@ -244,18 +128,18 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
       }
     }
     setInputText("");
-    setTyping(chatId, currentUid, false);
+    setGroupTyping(group.id, currentUid, false);
     inputRef.current?.focus();
   }, [
     inputText,
     isSending,
     editingMessage,
     replyToMessage,
-    chatId,
+    group.id,
     currentUid,
     editMessage,
-    sendMessage,
-    setTyping,
+    sendGroupMessage,
+    setGroupTyping,
   ]);
 
   const handleKeyDown = useCallback(
@@ -271,9 +155,9 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       setInputText(e.target.value);
-      setTyping(chatId, currentUid, e.target.value.length > 0);
+      setGroupTyping(group.id, currentUid, e.target.value.length > 0);
     },
-    [chatId, currentUid, setTyping],
+    [group.id, currentUid, setGroupTyping],
   );
 
   const handleFileSelect = useCallback(
@@ -285,31 +169,24 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
       const isVideo = file.type.startsWith("video/");
 
       setIsUploading(true);
-      setUploadProgress(0);
-
       try {
         const localUrl = URL.createObjectURL(file);
-
-        await sendMessage(
-          chatId,
+        await sendGroupMessage(
+          group.id,
           currentUid,
           "",
           isImage ? "image" : isVideo ? "video" : "file",
-          {
-            mediaUrl: localUrl,
-            mediaName: file.name,
-          },
+          { mediaUrl: localUrl, mediaName: file.name },
         );
         toast.success(`${isImage ? "Photo" : isVideo ? "Video" : "File"} sent`);
       } catch {
         toast.error("Failed to send file");
       } finally {
         setIsUploading(false);
-        setUploadProgress(0);
         e.target.value = "";
       }
     },
-    [chatId, currentUid, sendMessage],
+    [group.id, currentUid, sendGroupMessage],
   );
 
   const startRecording = useCallback(async () => {
@@ -322,25 +199,20 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
           : "audio/webm",
       });
       audioChunksRef.current = [];
-
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) audioChunksRef.current.push(e.data);
       };
-
       recorder.onstop = async () => {
         const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
         for (const track of stream.getTracks()) track.stop();
         recordingStreamRef.current = null;
-
         if (blob.size === 0) return;
-
         setIsUploading(true);
         try {
           const voiceUrl = URL.createObjectURL(blob);
-          const duration = recordingDuration;
-          await sendMessage(chatId, currentUid, "", "voice", {
+          await sendGroupMessage(group.id, currentUid, "", "voice", {
             mediaUrl: voiceUrl,
-            mediaDuration: duration,
+            mediaDuration: recordingDuration,
           });
           toast.success("Voice message sent");
         } catch {
@@ -349,19 +221,17 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
           setIsUploading(false);
         }
       };
-
       recorder.start(100);
       mediaRecorderRef.current = recorder;
       setIsRecording(true);
       setRecordingDuration(0);
-
       recordingTimerRef.current = setInterval(() => {
         setRecordingDuration((d) => d + 1);
       }, 1000);
     } catch {
       toast.error("Microphone permission denied");
     }
-  }, [chatId, currentUid, sendMessage, recordingDuration]);
+  }, [group.id, currentUid, sendGroupMessage, recordingDuration]);
 
   const stopRecording = useCallback(() => {
     if (recordingTimerRef.current) {
@@ -395,185 +265,133 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
     toast.info("Recording cancelled");
   }, []);
 
-  const isOtherTyping = Object.entries(chat?.typing ?? {}).some(
-    ([uid, val]) => uid !== currentUid && val,
-  );
-
-  const isPinned = chat?.pinned[currentUid] ?? false;
-  const isArchived = chat?.archived[currentUid] ?? false;
-  const isMuted = chat?.muted[currentUid] ?? false;
-
-  const visibleMessages = chatMessages.filter(
-    (m) => !m.deletedFor.includes(currentUid),
-  );
-
-  const filteredMessages = searchQuery
-    ? visibleMessages.filter((m) =>
-        m.text.toLowerCase().includes(searchQuery.toLowerCase()),
-      )
-    : visibleMessages;
-
-  const allChats = chats;
-
-  const lastSentIdx = (() => {
-    for (let i = filteredMessages.length - 1; i >= 0; i--) {
-      if (filteredMessages[i].senderId === currentUid) return i;
-    }
-    return -1;
-  })();
-
   const formatRecordingTime = (secs: number) => {
     const m = Math.floor(secs / 60);
     const s = secs % 60;
     return `${m}:${String(s).padStart(2, "0")}`;
   };
 
-  // Show loading state while chat/user resolves (with a max wait)
-  if (!chat || !otherUser) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-background gap-4 relative">
-        {onBack && (
-          <div className="absolute top-0 left-0 right-0 flex items-center gap-2 px-4 py-3 border-b border-border">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onBack}
-              className="md:hidden rounded-xl w-9 h-9"
-            >
-              <ArrowLeft size={18} />
-            </Button>
-          </div>
-        )}
-        <div className="flex flex-col items-center gap-3 mt-8">
-          <div className="w-16 h-16 rounded-2xl bg-muted/60 flex items-center justify-center">
-            <Loader2 size={28} className="text-primary animate-spin" />
-          </div>
-          <div className="text-center">
-            <p className="text-sm font-medium">Opening chat...</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Setting up your conversation
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Typing: show which members are typing (excluding self)
+  const typingUsers = Object.entries(group.typing ?? {})
+    .filter(([uid, val]) => uid !== currentUid && val)
+    .map(([uid]) => users[uid]);
 
-  const participants = chat.participants
-    .map((uid) => users[uid])
-    .filter(Boolean);
+  // Last sent message index
+  const lastSentIdx = (() => {
+    for (let i = groupMsgs.length - 1; i >= 0; i--) {
+      if (groupMsgs[i].senderId === currentUid) return i;
+    }
+    return -1;
+  })();
+
+  // Member avatars for header (up to 3)
+  const memberAvatars = group.members
+    .filter((uid) => uid !== currentUid)
+    .slice(0, 3)
+    .map((uid) => users[uid]);
+
+  const isAdmin = group.adminId === currentUid;
 
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Header */}
-      <div className="flex items-center gap-2 sm:gap-3 px-2 sm:px-4 py-2.5 border-b border-border bg-background/95 backdrop-blur-md sticky top-0 z-10 shadow-sm min-h-[56px]">
+      <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-background/95 backdrop-blur-md sticky top-0 z-10 shadow-sm">
         {onBack && (
           <Button
             variant="ghost"
             size="icon"
             onClick={onBack}
-            className="md:hidden rounded-xl w-9 h-9 flex-shrink-0"
+            className="-ml-1 md:hidden rounded-xl w-9 h-9"
           >
             <ArrowLeft size={18} />
           </Button>
         )}
 
-        <button
-          type="button"
-          className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0 hover:opacity-80 transition-opacity overflow-hidden"
-          onClick={() => {}}
-        >
-          <UserAvatar
-            src={otherUser.profilePicture}
-            username={otherUser.username}
-            isOnline={otherUser.onlineStatus}
-            size="md"
-          />
-          <div className="flex-1 min-w-0 text-left">
-            <p className="font-semibold text-sm truncate tracking-tight">
-              @{otherUser.username}
-            </p>
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          {/* Stacked group avatars */}
+          <div className="relative flex-shrink-0 w-10 h-10">
+            {memberAvatars.length === 0 ? (
+              <div className="w-10 h-10 rounded-full group-icon-gradient flex items-center justify-center">
+                <Users size={18} className="text-white" />
+              </div>
+            ) : memberAvatars.length === 1 ? (
+              <UserAvatar
+                src={memberAvatars[0]?.profilePicture}
+                username={memberAvatars[0]?.username ?? "?"}
+                size="md"
+                showOnline={false}
+              />
+            ) : (
+              <div className="relative w-10 h-10">
+                <div className="absolute bottom-0 right-0 w-7 h-7 rounded-full border-2 border-background overflow-hidden">
+                  <UserAvatar
+                    src={memberAvatars[0]?.profilePicture}
+                    username={memberAvatars[0]?.username ?? "?"}
+                    size="sm"
+                    showOnline={false}
+                  />
+                </div>
+                <div className="absolute top-0 left-0 w-7 h-7 rounded-full border-2 border-background overflow-hidden">
+                  <UserAvatar
+                    src={memberAvatars[1]?.profilePicture}
+                    username={memberAvatars[1]?.username ?? "?"}
+                    size="sm"
+                    showOnline={false}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm truncate">{group.name}</p>
             <p className="text-xs text-muted-foreground">
-              {isOtherTyping ? (
-                <span className="text-primary font-medium">typing...</span>
-              ) : otherUser.onlineStatus ? (
-                <span className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-online-dot inline-block" />
-                  Active now
+              {typingUsers.length > 0 ? (
+                <span className="text-primary font-medium">
+                  {typingUsers[0]?.username ?? "Someone"} is typing...
                 </span>
               ) : (
-                `Last seen ${formatLastSeen(otherUser.lastSeen)}`
+                `${group.members.length} member${group.members.length !== 1 ? "s" : ""}`
               )}
             </p>
           </div>
-        </button>
+        </div>
 
-        <div className="flex items-center gap-0.5 flex-shrink-0">
+        <div className="flex items-center gap-1">
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => setSearchOpen((v) => !v)}
-            className={cn("w-9 h-9", searchOpen && "bg-accent")}
+            onClick={() => setShowInfo(true)}
+            className={cn(showInfo && "bg-accent")}
           >
-            <Search size={17} />
+            <Info size={18} />
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="w-9 h-9">
-                <MoreHorizontal size={17} />
+              <Button variant="ghost" size="icon">
+                <MoreHorizontal size={18} />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="rounded-xl">
-              <DropdownMenuItem onClick={() => togglePin(chatId, currentUid)}>
-                <Pin size={14} className="mr-2" />
-                {isPinned ? "Unpin chat" : "Pin chat"}
+              <DropdownMenuItem onClick={() => setShowInfo(true)}>
+                <Users size={14} className="mr-2" />
+                Group Info
               </DropdownMenuItem>
               <DropdownMenuItem
-                onClick={() => toggleArchive(chatId, currentUid)}
+                className="text-destructive"
+                onClick={async () => {
+                  await leaveGroup(group.id);
+                  toast.success("Left group");
+                  onBack?.();
+                }}
               >
-                <Archive size={14} className="mr-2" />
-                {isArchived ? "Unarchive" : "Archive chat"}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => toggleMute(chatId, currentUid)}>
-                <VolumeX size={14} className="mr-2" />
-                {isMuted ? "Unmute" : "Mute notifications"}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => toggleVanishMode(chatId)}>
-                <Zap size={14} className="mr-2" />
-                {chat.vanishMode
-                  ? "Turn off vanish mode"
-                  : "Turn on vanish mode"}
+                <LogOut size={14} className="mr-2" />
+                Leave Group
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button variant="ghost" size="icon" className="w-9 h-9">
-            <Info size={17} />
-          </Button>
         </div>
       </div>
-
-      {/* Search bar */}
-      {searchOpen && (
-        <div className="px-4 py-2 border-b border-border bg-muted/30">
-          <Input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search in conversation..."
-            className="rounded-xl h-8 text-sm"
-            autoFocus
-          />
-        </div>
-      )}
-
-      {/* Vanish mode indicator */}
-      {chat.vanishMode && (
-        <div className="flex items-center justify-center gap-2 py-2 bg-primary/5 border-b border-border">
-          <Zap size={12} className="text-primary" />
-          <span className="text-xs text-primary font-medium">
-            Vanish mode is on
-          </span>
-        </div>
-      )}
 
       {/* Upload progress */}
       {isUploading && (
@@ -583,51 +401,46 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
             <span className="text-xs text-primary font-medium">
               Uploading media...
             </span>
-            {uploadProgress > 0 && (
-              <span className="text-xs text-muted-foreground">
-                {uploadProgress}%
-              </span>
-            )}
           </div>
         </div>
       )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto chat-scroll py-2 chat-messages-bg">
-        {filteredMessages.length === 0 && (
+        {groupMsgs.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full gap-3 py-12">
-            <UserAvatar
-              src={otherUser.profilePicture}
-              username={otherUser.username}
-              size="xl"
-              showOnline={false}
-            />
+            <div className="w-16 h-16 rounded-2xl group-icon-gradient flex items-center justify-center">
+              <Users size={28} className="text-white" />
+            </div>
             <div className="text-center">
-              <p className="font-semibold">@{otherUser.username}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {otherUser.bio || "No bio yet"}
+              <p className="font-semibold">{group.name}</p>
+              {group.description && (
+                <p className="text-xs text-muted-foreground mt-1 max-w-xs">
+                  {group.description}
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground mt-2">
+                {group.members.length} members · Start the conversation!
               </p>
             </div>
-            <p className="text-xs text-muted-foreground mt-2">
-              {searchQuery
-                ? "No messages match your search"
-                : "Start the conversation!"}
-            </p>
           </div>
         )}
 
-        {filteredMessages.map((msg, idx) => {
-          const prevMsg = filteredMessages[idx - 1];
+        {groupMsgs.map((msg, idx) => {
+          const prevMsg = groupMsgs[idx - 1];
           const showDateSep =
             !prevMsg ||
             new Date(msg.createdAt).toDateString() !==
               new Date(prevMsg.createdAt).toDateString();
 
           const replyMsg = msg.replyTo
-            ? chatMessages.find((m) => m.id === msg.replyTo)
+            ? groupMsgs.find((m) => m.id === msg.replyTo)
             : undefined;
 
           const isLastSent = msg.senderId === currentUid && idx === lastSentIdx;
+          const participants = group.members
+            .map((uid) => users[uid])
+            .filter(Boolean);
 
           return (
             <React.Fragment key={msg.id}>
@@ -643,6 +456,13 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
                   <Separator className="flex-1" />
                 </div>
               )}
+              {msg.senderId !== currentUid && users[msg.senderId] && (
+                <div className={cn("px-3 mb-0.5", "pl-[52px]")}>
+                  <span className="text-[11px] font-semibold text-primary/80">
+                    @{users[msg.senderId].username}
+                  </span>
+                </div>
+              )}
               <MessageBubble
                 message={msg}
                 isSender={msg.senderId === currentUid}
@@ -651,7 +471,7 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
                 replyToMessage={replyMsg}
                 participants={participants}
                 onReact={(emoji) =>
-                  reactToMessage(chatId, msg.id, emoji, currentUid)
+                  reactToMessage(group.id, msg.id, emoji, currentUid)
                 }
                 onReply={() => setReplyToMessage(msg)}
                 onEdit={
@@ -663,26 +483,22 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
                       }
                     : undefined
                 }
-                onDeleteForMe={() =>
-                  deleteMessageForMe(chatId, msg.id, currentUid)
-                }
+                onDeleteForMe={() => {}}
                 onDeleteForEveryone={
-                  msg.senderId === currentUid
-                    ? () => deleteMessageForEveryone(chatId, msg.id)
+                  msg.senderId === currentUid || isAdmin
+                    ? () => deleteMessageForEveryone(group.id, msg.id)
                     : undefined
                 }
-                onForward={() => {
-                  setForwardingMessage(msg);
-                  setShowForwardModal(true);
-                }}
+                onForward={() => {}}
                 isLastMessage={isLastSent}
               />
             </React.Fragment>
           );
         })}
 
-        {/* Typing indicator */}
-        {isOtherTyping && <TypingIndicator user={otherUser} />}
+        {typingUsers.length > 0 && typingUsers[0] && (
+          <TypingIndicator user={typingUsers[0]} />
+        )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -709,21 +525,13 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
               setInputText("");
             }}
           >
-            ✕
+            <X size={14} />
           </Button>
         </div>
       )}
 
       {/* Input bar */}
-      {isBlocked || isBlockedByOther ? (
-        <div className="px-4 py-4 border-t border-border bg-background text-center">
-          <p className="text-sm text-muted-foreground">
-            {isBlocked
-              ? "You blocked this user"
-              : "You can't message this person"}
-          </p>
-        </div>
-      ) : isRecording ? (
+      {isRecording ? (
         <div className="flex items-center gap-3 px-4 py-3 border-t border-border bg-background input-bar-mobile">
           <div className="w-2.5 h-2.5 rounded-full bg-destructive record-pulse flex-shrink-0" />
           <div className="flex items-center gap-0.5 flex-1">
@@ -743,7 +551,6 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
             size="icon"
             onClick={cancelRecording}
             className="text-muted-foreground hover:text-destructive w-9 h-9 rounded-xl flex-shrink-0"
-            title="Cancel recording"
           >
             <MicOff size={18} />
           </Button>
@@ -751,13 +558,12 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
             size="icon"
             onClick={stopRecording}
             className="bg-destructive hover:bg-destructive/90 w-9 h-9 rounded-xl flex-shrink-0"
-            title="Stop and send"
           >
             <Square size={14} className="text-white fill-white" />
           </Button>
         </div>
       ) : (
-        <div className="flex items-end gap-1.5 sm:gap-2 px-2 sm:px-3 py-3 border-t border-border bg-background input-bar-mobile">
+        <div className="flex items-end gap-2 px-3 py-3 border-t border-border bg-background input-bar-mobile">
           <EmojiPicker onEmojiSelect={(e) => setInputText((p) => p + e)} />
           <div className="flex-1 relative">
             <Input
@@ -765,7 +571,7 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
               value={inputText}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder="Message..."
+              placeholder="Message group..."
               className="rounded-2xl bg-muted/60 border border-border/60 focus-visible:ring-1 focus-visible:ring-primary/50 focus-visible:border-primary/40 px-4 h-10 text-sm transition-all"
               disabled={isSending || isUploading}
             />
@@ -809,7 +615,6 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
               size="icon"
               onClick={startRecording}
               className="text-muted-foreground hover:text-primary flex-shrink-0 h-10 w-10 rounded-xl transition-colors"
-              title="Record voice message"
             >
               <Mic size={20} />
             </Button>
@@ -817,33 +622,64 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
         </div>
       )}
 
-      {/* Forward modal */}
-      <ForwardModal
-        open={showForwardModal}
-        onClose={() => {
-          setShowForwardModal(false);
-          setForwardingMessage(null);
-        }}
-        chats={allChats}
-        users={users}
-        currentUid={currentUid}
-        onForward={(targetChatId) => {
-          if (forwardingMessage) {
-            forwardMessage(forwardingMessage, targetChatId, currentUid);
-          }
-        }}
-      />
+      {/* Group Info Dialog */}
+      <Dialog open={showInfo} onOpenChange={setShowInfo}>
+        <DialogContent className="rounded-2xl max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users size={16} className="text-primary" />
+              {group.name}
+            </DialogTitle>
+          </DialogHeader>
+          {group.description && (
+            <p className="text-sm text-muted-foreground">{group.description}</p>
+          )}
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+              {group.members.length} Members
+            </p>
+            <ScrollArea className="max-h-60">
+              {group.members.map((uid) => {
+                const member = users[uid];
+                return (
+                  <div key={uid} className="flex items-center gap-3 py-2">
+                    <UserAvatar
+                      src={member?.profilePicture}
+                      username={member?.username ?? uid.slice(-6)}
+                      size="sm"
+                      isOnline={member?.onlineStatus}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        @{member?.username ?? uid.slice(-6)}
+                      </p>
+                      {uid === group.adminId && (
+                        <p className="text-xs text-primary">Admin</p>
+                      )}
+                      {uid === currentUid && (
+                        <p className="text-xs text-muted-foreground">You</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </ScrollArea>
+          </div>
+          <Button
+            variant="destructive"
+            className="w-full rounded-xl"
+            onClick={async () => {
+              setShowInfo(false);
+              await leaveGroup(group.id);
+              toast.success("Left group");
+              onBack?.();
+            }}
+          >
+            <LogOut size={14} className="mr-2" />
+            Leave Group
+          </Button>
+        </DialogContent>
+      </Dialog>
     </div>
   );
-}
-
-function formatLastSeen(timestamp: number): string {
-  const diff = Date.now() - timestamp;
-  const mins = Math.floor(diff / 60000);
-  const hours = Math.floor(diff / 3600000);
-  const days = Math.floor(diff / 86400000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  if (hours < 24) return `${hours}h ago`;
-  return `${days}d ago`;
 }

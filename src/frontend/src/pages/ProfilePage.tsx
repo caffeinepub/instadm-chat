@@ -1,3 +1,4 @@
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,19 +8,24 @@ import { Textarea } from "@/components/ui/textarea";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import {
   ArrowLeft,
+  Calendar,
   Check,
   Clock,
   Edit2,
+  Globe,
+  Link2,
   Loader2,
   Lock,
   MessageCircle,
+  Phone,
+  User,
   UserCheck,
   UserMinus,
   UserPlus,
   X,
 } from "lucide-react";
 import type React from "react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { UserAvatar } from "../components/chat/UserAvatar";
 import { useAuth } from "../contexts/AuthContext";
@@ -33,6 +39,17 @@ export function ProfilePage() {
   const { username } = useParams({ strict: false }) as { username?: string };
   const navigate = useNavigate();
   const { currentUser, updateProfile } = useAuth();
+
+  // Enable scrolling on sub-page
+  useEffect(() => {
+    document.body.classList.add("page-subpage");
+    document.getElementById("root")?.classList.add("page-subpage");
+    return () => {
+      document.body.classList.remove("page-subpage");
+      document.getElementById("root")?.classList.remove("page-subpage");
+    };
+  }, []);
+
   const {
     users,
     openChat,
@@ -59,6 +76,11 @@ export function ProfilePage() {
     bio: currentUser?.bio ?? "",
     isPrivate: currentUser?.isPrivate ?? false,
     profilePicture: currentUser?.profilePicture ?? "",
+    fullName: currentUser?.fullName ?? "",
+    phoneNumber: currentUser?.phoneNumber ?? "",
+    birthDate: currentUser?.birthDate ?? "",
+    timezone: currentUser?.timezone ?? "",
+    websiteUrl: currentUser?.websiteUrl ?? "",
   });
   const [saving, setSaving] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
@@ -78,6 +100,11 @@ export function ProfilePage() {
       bio: form.bio.trim(),
       isPrivate: form.isPrivate,
       profilePicture: form.profilePicture.trim(),
+      fullName: form.fullName.trim(),
+      phoneNumber: form.phoneNumber.trim(),
+      birthDate: form.birthDate.trim(),
+      timezone: form.timezone.trim(),
+      websiteUrl: form.websiteUrl.trim(),
     });
     setSaving(false);
     setEditing(false);
@@ -116,11 +143,9 @@ export function ProfilePage() {
     setFollowLoading(true);
     try {
       if (targetUser.isPrivate) {
-        // Private — send follow request
         sendFollowRequest(targetUser.uid, targetUser.username);
         toast.success("Follow request sent");
       } else {
-        // Public — follow directly
         await followUser(targetUser.uid);
         toast.success(`Following @${targetUser.username}`);
       }
@@ -149,17 +174,22 @@ export function ProfilePage() {
     toast.success("Follow request cancelled");
   };
 
-  // Relationship status
   const isFollowing =
     currentUser && targetUser.followers.includes(currentUser.uid);
   const isPending =
     currentUser && hasPendingRequest(currentUser.uid, targetUser.uid);
 
-  // Incoming follow requests to MY profile
   const incomingRequests =
     isOwnProfile && currentUser
       ? getPendingRequestsForUser(currentUser.uid)
       : [];
+
+  const memberSince = targetUser.createdAt
+    ? new Date(targetUser.createdAt).toLocaleDateString([], {
+        month: "long",
+        year: "numeric",
+      })
+    : null;
 
   return (
     <div className="min-h-dvh bg-background page-fade overflow-y-auto">
@@ -189,6 +219,11 @@ export function ProfilePage() {
                 bio: currentUser?.bio ?? "",
                 isPrivate: currentUser?.isPrivate ?? false,
                 profilePicture: currentUser?.profilePicture ?? "",
+                fullName: currentUser?.fullName ?? "",
+                phoneNumber: currentUser?.phoneNumber ?? "",
+                birthDate: currentUser?.birthDate ?? "",
+                timezone: currentUser?.timezone ?? "",
+                websiteUrl: currentUser?.websiteUrl ?? "",
               });
               setEditing(true);
             }}
@@ -223,16 +258,28 @@ export function ProfilePage() {
         )}
       </div>
 
-      <div className="max-w-lg mx-auto px-4 py-8">
-        {/* Avatar */}
-        <div className="flex flex-col items-center gap-5 mb-8">
+      <div className="max-w-lg mx-auto px-4 py-8 space-y-6">
+        {/* Avatar + Basic info */}
+        <div className="flex flex-col items-center gap-5">
           <div className="relative">
-            <UserAvatar
-              src={targetUser.profilePicture}
-              username={targetUser.username}
-              isOnline={targetUser.onlineStatus}
-              size="xl"
-            />
+            <div
+              className="rounded-full p-0.5"
+              style={{
+                background: targetUser.onlineStatus
+                  ? "linear-gradient(135deg, oklch(0.62 0.27 345), oklch(0.58 0.25 290))"
+                  : "transparent",
+                padding: targetUser.onlineStatus ? "2px" : "0",
+              }}
+            >
+              <div className="rounded-full overflow-hidden bg-background">
+                <UserAvatar
+                  src={targetUser.profilePicture}
+                  username={targetUser.username}
+                  isOnline={false}
+                  size="xl"
+                />
+              </div>
+            </div>
             {isOwnProfile && (
               <>
                 <button
@@ -255,27 +302,64 @@ export function ProfilePage() {
 
           {!editing ? (
             <>
-              <div className="text-center">
-                <h2 className="text-2xl font-bold tracking-tight">
+              <div className="text-center space-y-1">
+                {targetUser.fullName && (
+                  <p className="text-base font-semibold text-foreground">
+                    {targetUser.fullName}
+                  </p>
+                )}
+                <h2 className="text-lg font-bold tracking-tight gradient-text">
                   @{targetUser.username}
                 </h2>
                 {targetUser.bio && (
-                  <p className="text-sm text-muted-foreground mt-1.5 max-w-xs leading-relaxed">
+                  <p className="text-sm text-muted-foreground mt-1.5 max-w-xs leading-relaxed text-center">
                     {targetUser.bio}
                   </p>
                 )}
-                {targetUser.isPrivate && (
-                  <div className="flex items-center gap-1.5 justify-center mt-2 text-xs text-muted-foreground">
-                    <Lock size={11} />
-                    <span>Private account</span>
-                  </div>
+                <div className="flex items-center gap-3 justify-center flex-wrap mt-2">
+                  {targetUser.isPrivate && (
+                    <Badge
+                      variant="outline"
+                      className="gap-1 rounded-full text-xs"
+                    >
+                      <Lock size={10} />
+                      Private
+                    </Badge>
+                  )}
+                  {targetUser.onlineStatus && (
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <span className="w-2 h-2 rounded-full bg-online-dot inline-block" />
+                      Active now
+                    </div>
+                  )}
+                  {memberSince && (
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Calendar size={10} />
+                      Joined {memberSince}
+                    </div>
+                  )}
+                </div>
+                {targetUser.websiteUrl && (
+                  <a
+                    href={
+                      targetUser.websiteUrl.startsWith("http")
+                        ? targetUser.websiteUrl
+                        : `https://${targetUser.websiteUrl}`
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-xs text-primary hover:underline justify-center mt-1"
+                  >
+                    <Link2 size={11} />
+                    {targetUser.websiteUrl}
+                  </a>
                 )}
               </div>
 
               {/* Stats */}
-              <div className="flex gap-10 text-center">
-                <div>
-                  <p className="font-bold text-xl">
+              <div className="flex gap-8 text-center">
+                <div className="flex flex-col items-center">
+                  <p className="font-bold text-xl leading-tight">
                     {targetUser.followers.length}
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
@@ -283,8 +367,8 @@ export function ProfilePage() {
                   </p>
                 </div>
                 <div className="w-px bg-border" />
-                <div>
-                  <p className="font-bold text-xl">
+                <div className="flex flex-col items-center">
+                  <p className="font-bold text-xl leading-tight">
                     {targetUser.following.length}
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
@@ -293,7 +377,7 @@ export function ProfilePage() {
                 </div>
               </div>
 
-              {/* Actions */}
+              {/* Actions for other profiles */}
               {!isOwnProfile && (
                 <div className="flex gap-2 flex-wrap justify-center">
                   {isFollowing ? (
@@ -362,8 +446,82 @@ export function ProfilePage() {
           ) : (
             /* Edit form */
             <div className="w-full space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                    <User size={11} /> Full Name
+                  </Label>
+                  <Input
+                    value={form.fullName}
+                    onChange={(e) =>
+                      setForm((p) => ({ ...p, fullName: e.target.value }))
+                    }
+                    placeholder="Your full name"
+                    className="rounded-xl text-sm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                    <Phone size={11} /> Phone
+                  </Label>
+                  <Input
+                    value={form.phoneNumber}
+                    onChange={(e) =>
+                      setForm((p) => ({ ...p, phoneNumber: e.target.value }))
+                    }
+                    placeholder="+1 234 567 890"
+                    className="rounded-xl text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                    <Calendar size={11} /> Birth Date
+                  </Label>
+                  <Input
+                    type="date"
+                    value={form.birthDate}
+                    onChange={(e) =>
+                      setForm((p) => ({ ...p, birthDate: e.target.value }))
+                    }
+                    className="rounded-xl text-sm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                    <Globe size={11} /> Timezone
+                  </Label>
+                  <Input
+                    value={form.timezone}
+                    onChange={(e) =>
+                      setForm((p) => ({ ...p, timezone: e.target.value }))
+                    }
+                    placeholder="UTC, EST, PST..."
+                    className="rounded-xl text-sm"
+                  />
+                </div>
+              </div>
+
               <div className="space-y-1.5">
-                <Label className="text-sm font-semibold">Bio</Label>
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                  <Link2 size={11} /> Website URL
+                </Label>
+                <Input
+                  value={form.websiteUrl}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, websiteUrl: e.target.value }))
+                  }
+                  placeholder="https://yoursite.com"
+                  className="rounded-xl text-sm"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Bio
+                </Label>
                 <Textarea
                   value={form.bio}
                   onChange={(e) =>
@@ -378,8 +536,11 @@ export function ProfilePage() {
                   {form.bio.length}/160
                 </p>
               </div>
+
               <div className="space-y-1.5">
-                <Label className="text-sm font-semibold">Avatar URL</Label>
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Avatar URL
+                </Label>
                 <Input
                   value={form.profilePicture}
                   onChange={(e) =>
@@ -389,6 +550,7 @@ export function ProfilePage() {
                   className="rounded-xl text-sm"
                 />
               </div>
+
               <div className="flex items-center justify-between p-4 bg-muted/40 rounded-xl">
                 <div>
                   <p className="text-sm font-medium flex items-center gap-1.5">
@@ -411,7 +573,7 @@ export function ProfilePage() {
 
         {/* Incoming follow requests — own profile only */}
         {isOwnProfile && incomingRequests.length > 0 && (
-          <div className="mt-2 rounded-2xl border border-border overflow-hidden">
+          <div className="rounded-2xl border border-border overflow-hidden">
             <div className="px-4 py-3 border-b border-border bg-muted/30">
               <p className="text-sm font-semibold flex items-center gap-2">
                 <UserPlus size={14} className="text-primary" />

@@ -140,9 +140,31 @@
     letter-spacing: -0.01em;
   }
 
+  body.page-login {
+    overflow-y: auto;
+    height: auto;
+  }
+
+  body.page-subpage {
+    overflow-y: auto;
+    height: auto;
+    min-height: 100dvh;
+  }
+
   #root {
     height: 100dvh;
     overflow: hidden;
+  }
+
+  #root.page-login {
+    height: auto;
+    overflow: visible;
+  }
+
+  #root.page-subpage {
+    height: auto;
+    overflow: visible;
+    min-height: 100dvh;
   }
 }
 
@@ -576,4 +598,164 @@ textarea {
   width: 3px;
   background: linear-gradient(180deg, oklch(0.62 0.27 345), oklch(0.58 0.25 290));
   border-radius: 0 2px 2px 0;
+}
+
+/* ─── Group icon gradient ────────────────────────────────────── */
+.group-icon-gradient {
+  background: linear-gradient(135deg, oklch(0.62 0.27 345), oklch(0.58 0.25 290));
+}
+
+/* ─── Avatar online glow ─────────────────────────────────────── */
+.avatar-online-glow {
+  box-shadow: 0 0 0 2px oklch(0.44 0.17 145), 0 0 8px oklch(0.44 0.17 145 / 0.4);
+}
+
+/* ─── Feature card hover ─────────────────────────────────────── */
+.feature-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px oklch(0.62 0.27 345 / 0.18);
+  border-color: oklch(0.72 0.18 345 / 0.70) !important;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.feature-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+/* ─── Send button pulse ──────────────────────────────────────── */
+@keyframes sendPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+.send-btn-pulse:hover {
+  animation: sendPulse 0.3s ease;
+}
+
+/* ─── Frosted glass nav rail ──────────────────────────────────── */
+.nav-rail {
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* ─── Tutorial step transition ────────────────────────────────── */
+@keyframes stepFadeIn {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.step-fade-in {
+  animation: stepFadeIn 0.25s ease-out forwards;
+}
+
+/* ─── Login body overflow fix ────────────────────────────────── */
+.login-scroll-body {
+  overflow-y: auto !important;
+  height: auto !important;
+}
+
+/* ─── Decorative grid pattern ─────────────────────────────────── */
+.grid-pattern {
+  background-image:
+    linear-gradient(oklch(var(--border) / 0.3) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(var(--border) / 0.3) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* ─── Stacked avatar group ────────────────────────────────────── */
+.avatar-stack > * + * {
+  margin-left: -8px;
+}
+
+/* ─── Smooth page entry variants ─────────────────────────────── */
+@keyframes slideFromRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.slide-from-right {
+  animation: slideFromRight 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* ─── Group badge ─────────────────────────────────────────────── */
+.group-badge {
+  background: linear-gradient(135deg, oklch(0.62 0.27 345 / 0.15), oklch(0.58 0.25 290 / 0.10));
+  border: 1px solid oklch(0.62 0.27 345 / 0.25);
+  color: oklch(0.62 0.20 345);
+}
+
+/* ─── Feature section gradient bg ────────────────────────────── */
+.features-bg {
+  background:
+    radial-gradient(ellipse at 0% 0%, oklch(0.62 0.27 345 / 0.06), transparent 50%),
+    radial-gradient(ellipse at 100% 100%, oklch(0.58 0.25 290 / 0.05), transparent 50%);
+}
+
+/* ─── Responsive utils ────────────────────────────────────────── */
+@media (max-width: 767px) {
+  .hide-mobile {
+    display: none !important;
+  }
+  body {
+    overflow: hidden;
+  }
+  /* Fix sub-pages scrolling on mobile */
+  .page-fade {
+    height: 100dvh;
+  }
+}
+
+@media (min-width: 768px) {
+  .login-scroll-body body {
+    overflow-y: auto;
+    height: auto;
+  }
+}
+
+/* ─── Small phone (< 480px) fixes ────────────────────────────── */
+@media (max-width: 480px) {
+  /* Tighter padding on very small phones */
+  .chat-window-header {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+  /* Ensure modals fit on small screens */
+  [role="dialog"] {
+    max-height: 90dvh;
+    overflow-y: auto;
+  }
+  /* Input bar safe area on iPhone */
+  .input-bar-mobile {
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 16px);
+  }
+}
+
+/* ─── Sub-page scrollable containers ─────────────────────────── */
+.subpage-scroll {
+  height: 100dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ─── page-subpage: allows scrolling on sub-pages ─────────────── */
+body.page-subpage {
+  overflow-y: auto !important;
+  height: auto !important;
+}
+#root.page-subpage {
+  height: auto !important;
+  overflow: visible !important;
+  min-height: 100dvh;
+}
+
+/* ─── Profile page responsive ─────────────────────────────────── */
+@media (max-width: 640px) {
+  .profile-stats-grid {
+    gap: 1.5rem;
+  }
+}
+
+/* ─── Login page light mode orbs ─────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  /* When JS hasn't run yet, these still look good */
+  .login-orb-pink {
+    background: radial-gradient(circle at 40% 40%, oklch(0.62 0.27 345 / 0.35) 0%, transparent 70%);
+  }
 }

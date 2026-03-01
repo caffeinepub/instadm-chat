@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "@tanstack/react-router";
 import { Archive, ArrowLeft } from "lucide-react";
-import React from "react";
+import { useEffect } from "react";
 import { UserAvatar } from "../components/chat/UserAvatar";
 import { useAuth } from "../contexts/AuthContext";
 import { useChat } from "../contexts/ChatContext";
@@ -12,6 +12,16 @@ export function ArchivePage() {
   const { currentUser } = useAuth();
 
   const currentUid = currentUser!.uid;
+
+  // Enable scrolling on sub-page
+  useEffect(() => {
+    document.body.classList.add("page-subpage");
+    document.getElementById("root")?.classList.add("page-subpage");
+    return () => {
+      document.body.classList.remove("page-subpage");
+      document.getElementById("root")?.classList.remove("page-subpage");
+    };
+  }, []);
   const archivedChats = chats.filter((c) => c.archived[currentUid]);
 
   const handleOpen = (chatId: string) => {
@@ -24,7 +34,7 @@ export function ArchivePage() {
   };
 
   return (
-    <div className="min-h-dvh bg-background page-fade">
+    <div className="min-h-dvh bg-background page-fade overflow-y-auto">
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-border sticky top-0 bg-background/95 backdrop-blur-sm z-10 shadow-sm">
         <Button
@@ -43,7 +53,7 @@ export function ArchivePage() {
         </h1>
       </div>
 
-      <div className="max-w-lg mx-auto py-2">
+      <div className="max-w-lg mx-auto py-2 px-0 sm:px-4">
         {archivedChats.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-4">
             <div

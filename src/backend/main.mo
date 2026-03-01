@@ -4,15 +4,15 @@ import Map "mo:core/Map";
 import Principal "mo:core/Principal";
 import Runtime "mo:core/Runtime";
 import Text "mo:core/Text";
-import Set "mo:core/Set";
 import Order "mo:core/Order";
 import Iter "mo:core/Iter";
 import Time "mo:core/Time";
 import MixinStorage "blob-storage/Mixin";
 import MixinAuthorization "authorization/MixinAuthorization";
+
 import AccessControl "authorization/access-control";
 
-
+// Use migration with-clause
 
 actor {
   include MixinStorage();
@@ -26,6 +26,7 @@ actor {
   type Timestamp = Int;
   type ChatId = Text;
   type MessageId = Text;
+  type GroupId = Text;
   type MessageType = {
     #text;
     #image;
@@ -63,6 +64,7 @@ actor {
     phoneNumber : Text;
     birthDate : Text;
     timezone : Text;
+    websiteUrl : Text;
   };
 
   module UserProfile {
@@ -93,6 +95,18 @@ actor {
     pinned : [(Text, Bool)];
     archived : [(Text, Bool)];
     muted : [(Text, Bool)];
+  };
+
+  type GroupChat = {
+    id : Text;
+    name : Text;
+    description : Text;
+    adminId : UserId;
+    members : [UserId];
+    createdAt : Timestamp;
+    lastMessage : ?Text;
+    lastUpdated : Timestamp;
+    typing : [(Text, Bool)];
   };
 
   type Message = {
@@ -130,7 +144,9 @@ actor {
 
   let users = Map.empty<UserId, UserProfile>();
   let chats = Map.empty<ChatId, Chat>();
+  let groupChats = Map.empty<GroupId, GroupChat>();
   let messages = Map.empty<MessageId, Message>();
+  let groupMessages = Map.empty<MessageId, Message>();
   let messageRequests = Map.empty<Text, MessageRequest>();
   let notifications = Map.empty<Text, Notification>();
 
@@ -155,6 +171,22 @@ actor {
       case (?chat) {
         chat.participants.find(func(id : UserId) : Bool { id == userId }) != null;
       };
+    };
+  };
+
+  func isGroupMember(groupId : GroupId, userId : UserId) : Bool {
+    switch (groupChats.get(groupId)) {
+      case (null) { false };
+      case (?group) {
+        group.members.find(func(id : UserId) : Bool { id == userId }) != null;
+      };
+    };
+  };
+
+  func isGroupAdmin(groupId : GroupId, userId : Principal) : Bool {
+    switch (groupChats.get(groupId)) {
+      case (null) { false };
+      case (?group) { group.adminId == userId };
     };
   };
 
@@ -193,6 +225,26 @@ actor {
       };
     };
     users.add(caller, updatedProfile);
+  };
+
+  public shared ({ caller }) func searchProfiles(searchText : Text) : async [UserProfile] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can search profiles");
+    };
+
+    let allUsers = users.values().toArray();
+
+    let filteredUsers = allUsers.filter(
+      func(profile) {
+        profile.username.contains(#text searchText) and canViewProfile(caller, profile._id);
+      }
+    );
+
+    let sortedUsers = filteredUsers.sort(
+      func(a, b) { UserProfile.compareByUsernamePrefixFirst(a, b, searchText) }
+    );
+
+    sortedUsers;
   };
 
   public query ({ caller }) func getPersonalityTypes() : async [Text] {
@@ -359,7 +411,7 @@ actor {
 
   public query ({ caller }) func getUserProfile(userId : Principal) : async ?UserProfile {
     if (not canViewProfile(caller, userId)) {
-      return null; // Don't reveal existence of private/blocked profiles
+      return null;
     };
     users.get(userId);
   };
@@ -476,7 +528,6 @@ actor {
           let newFollowing = callerProfile.following.concat([targetId]);
           users.add(caller, { callerProfile with following = newFollowing });
 
-          // Add caller to target's followers
           switch (users.get(targetId)) {
             case (null) {};
             case (?targetProfile) {
@@ -500,7 +551,6 @@ actor {
         let newFollowing = callerProfile.following.filter(func(id : UserId) : Bool { id != targetId });
         users.add(caller, { callerProfile with following = newFollowing });
 
-        // Remove caller from target's followers
         switch (users.get(targetId)) {
           case (null) {};
           case (?targetProfile) {
@@ -520,7 +570,6 @@ actor {
     users.remove(caller);
     temporaryFolders.remove(caller);
 
-    // Clean up user from followers/following lists
     for ((userId, profile) in users.entries()) {
       let newFollowers = profile.followers.filter(func(id : UserId) : Bool { id != caller });
       let newFollowing = profile.following.filter(func(id : UserId) : Bool { id != caller });
@@ -600,7 +649,7 @@ actor {
     };
 
     if (not isParticipant(chatId, caller)) {
-      return null; // Don't reveal existence of chats user is not part of
+      return null;
     };
 
     chats.get(chatId);
@@ -612,6 +661,7 @@ actor {
     chatId # "_" # Int.toText(timestamp);
   };
 
+  // Individual chat
   public shared ({ caller }) func sendMessage(
     chatId : Text,
     text : Text,
@@ -671,7 +721,6 @@ actor {
 
     messages.add(messageId, newMessage);
 
-    // Update chat's last message
     switch (chats.get(chatId)) {
       case (null) {};
       case (?chat) {
@@ -798,38 +847,7 @@ actor {
           Runtime.trap("Cannot react to deleted message");
         };
 
-        let existingReaction = message.reactions.find(
-          func((e, _) : (Text, [UserId])) : Bool { e == emoji }
-        );
-
-        let newReactions = switch (existingReaction) {
-          case (null) {
-            message.reactions.concat([(emoji, [caller])]);
-          };
-          case (?(_, users)) {
-            let alreadyReacted = users.find(func(id : UserId) : Bool { id == caller }) != null;
-            if (alreadyReacted) {
-              let newUsers = users.filter(func(id : UserId) : Bool { id != caller });
-              if (newUsers.size() == 0) {
-                message.reactions.filter(func((e, _) : (Text, [UserId])) : Bool { e != emoji });
-              } else {
-                message.reactions.map(
-                  func((e, u)) {
-                    if (e == emoji) { (e, newUsers) } else { (e, u) };
-                  }
-                );
-              };
-            } else {
-              let newUsers = users.concat([caller]);
-              message.reactions.map(
-                func((e, u)) {
-                  if (e == emoji) { (e, newUsers) } else { (e, u) };
-                }
-              );
-            };
-          };
-        };
-
+        let newReactions = message.reactions.concat([(emoji, [caller])]);
         messages.add(messageId, { message with reactions = newReactions });
       };
     };
@@ -991,5 +1009,271 @@ actor {
         chats.add(chatId, { chat with vanishMode = not chat.vanishMode });
       };
     };
+  };
+
+  // GROUP CHAT MANAGEMENT
+
+  public shared ({ caller }) func createGroupChat(
+    name : Text,
+    description : Text,
+    memberIds : [Principal],
+  ) : async Text {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can create group chats");
+    };
+
+    if (name.trim(#char ' ').size() == 0) {
+      Runtime.trap("Group name cannot be empty");
+    };
+
+    let groupId = name # Time.now().toText();
+
+    let filteredMembers = memberIds.filter(func(id) { id != caller });
+
+    let newGroup : GroupChat = {
+      id = groupId;
+      name;
+      description;
+      adminId = caller;
+      members = [caller].concat(filteredMembers);
+      createdAt = Time.now();
+      lastMessage = null;
+      lastUpdated = Time.now();
+      typing = [];
+    };
+
+    groupChats.add(groupId, newGroup);
+    groupId;
+  };
+
+  public query ({ caller }) func getMyGroupChats() : async [GroupChat] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view group chats");
+    };
+
+    groupChats.values().toArray().filter(func(group) { isGroupMember(group.id, caller) });
+  };
+
+  public query ({ caller }) func getGroupById(groupId : Text) : async ?GroupChat {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view group details");
+    };
+
+    if (not isGroupMember(groupId, caller)) {
+      return null;
+    };
+
+    groupChats.get(groupId);
+  };
+
+  public shared ({ caller }) func sendGroupMessage(
+    groupId : Text,
+    text : Text,
+    messageType : Text,
+    mediaUrl : Text,
+    replyTo : Text,
+  ) : async Message {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can send group messages");
+    };
+
+    if (not isGroupMember(groupId, caller)) {
+      Runtime.trap("Unauthorized: You are not a member of this group");
+    };
+
+    let msgType : MessageType = switch (messageType) {
+      case ("image") { #image };
+      case ("video") { #video };
+      case ("voice") { #voice };
+      case ("file") { #file };
+      case ("gif") { #gif };
+      case (_) { #text };
+    };
+
+    let timestamp = Time.now();
+    let messageId = groupId # "_" # Int.toText(timestamp);
+
+    let newMessage : Message = {
+      senderId = caller;
+      text = text;
+      mediaUrl = mediaUrl;
+      messageType = msgType;
+      createdAt = timestamp;
+      seenBy = [caller];
+      reactions = [];
+      edited = false;
+      editedAt = null;
+      deletedForEveryone = false;
+      replyTo = if (replyTo == "") { null } else { ?replyTo };
+      vanish = false;
+    };
+
+    groupMessages.add(messageId, newMessage);
+
+    switch (groupChats.get(groupId)) {
+      case (null) {};
+      case (?group) {
+        groupChats.add(
+          groupId,
+          {
+            group with
+            lastMessage = ?text;
+            lastUpdated = timestamp;
+          },
+        );
+      };
+    };
+
+    newMessage;
+  };
+
+  public query ({ caller }) func getGroupMessages(groupId : Text, afterTimestamp : Int) : async [Message] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view group messages");
+    };
+
+    if (not isGroupMember(groupId, caller)) {
+      Runtime.trap("Unauthorized: You are not a member of this group");
+    };
+
+    let allMessages = groupMessages.entries().toArray();
+    let groupMsgs = allMessages.filter(
+      func((id, msg)) {
+        id.startsWith(#text groupId) and msg.createdAt > afterTimestamp and not msg.deletedForEveryone;
+      }
+    );
+
+    groupMsgs.map(func((_, msg)) { msg });
+  };
+
+  public shared ({ caller }) func markGroupMessagesSeen(groupId : Text) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can mark group messages as seen");
+    };
+
+    if (not isGroupMember(groupId, caller)) {
+      Runtime.trap("Unauthorized: You are not a member of this group");
+    };
+
+    for ((messageId, message) in groupMessages.entries()) {
+      if (messageId.startsWith(#text groupId)) {
+        let alreadySeen = message.seenBy.find(func(id : UserId) : Bool { id == caller }) != null;
+        if (not alreadySeen) {
+          let newSeenBy = message.seenBy.concat([caller]);
+          groupMessages.add(messageId, { message with seenBy = newSeenBy });
+        };
+      };
+    };
+  };
+
+  public shared ({ caller }) func addGroupMember(groupId : Text, userId : Principal) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can add group members");
+    };
+
+    if (not isGroupAdmin(groupId, caller)) {
+      Runtime.trap("Unauthorized: Only group admins can add members");
+    };
+
+    switch (groupChats.get(groupId)) {
+      case (null) { Runtime.trap("Group not found") };
+      case (?group) {
+        let alreadyMember = group.members.find(func(id : UserId) : Bool { id == userId }) != null;
+        if (not alreadyMember) {
+          let newMembers = group.members.concat([userId]);
+          groupChats.add(groupId, { group with members = newMembers });
+        };
+      };
+    };
+  };
+
+  public shared ({ caller }) func removeGroupMember(groupId : Text, userId : Principal) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can remove group members");
+    };
+
+    if (not isGroupAdmin(groupId, caller)) {
+      Runtime.trap("Unauthorized: Only group admins can remove members");
+    };
+
+    switch (groupChats.get(groupId)) {
+      case (null) { Runtime.trap("Group not found") };
+      case (?group) {
+        if (userId == group.adminId and group.members.size() > 1) {
+          Runtime.trap("Cannot remove the admin from the group");
+        };
+
+        let newMembers = group.members.filter(func(id) { id != userId });
+        groupChats.add(groupId, { group with members = newMembers });
+      };
+    };
+  };
+
+  public shared ({ caller }) func leaveGroup(groupId : Text) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can leave groups");
+    };
+
+    if (not isGroupMember(groupId, caller)) {
+      Runtime.trap("You are not a member of this group");
+    };
+
+    switch (groupChats.get(groupId)) {
+      case (null) { Runtime.trap("Group not found") };
+      case (?group) {
+        if (caller == group.adminId and group.members.size() > 1) {
+          Runtime.trap("Admin cannot leave the group while other members remain");
+        };
+
+        let newMembers = group.members.filter(func(id) { id != caller });
+        groupChats.add(groupId, { group with members = newMembers });
+      };
+    };
+  };
+
+  public shared ({ caller }) func updateGroupInfo(
+    groupId : Text,
+    name : Text,
+    description : Text,
+  ) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can update group info");
+    };
+
+    if (not isGroupAdmin(groupId, caller)) {
+      Runtime.trap("Unauthorized: Only group admins can update group info");
+    };
+
+    switch (groupChats.get(groupId)) {
+      case (null) { Runtime.trap("Group not found") };
+      case (?group) {
+        groupChats.add(groupId, { group with name; description });
+      };
+    };
+  };
+
+  public shared ({ caller }) func setGroupTypingStatus(groupId : Text, isTyping : Bool) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can set group typing status");
+    };
+
+    if (not isGroupMember(groupId, caller)) {
+      Runtime.trap("Unauthorized: You are not a member of this group");
+    };
+
+    switch (groupChats.get(groupId)) {
+      case (null) { Runtime.trap("Group not found") };
+      case (?group) {
+        let callerText = caller.toText();
+        let newTyping = group.typing.filter(func((userId, _) : (Text, Bool)) : Bool { userId != callerText });
+        let updatedTyping = newTyping.concat([(callerText, isTyping)]);
+        groupChats.add(groupId, { group with typing = updatedTyping });
+      };
+    };
+  };
+
+  // HTTP Outcall placeholder for fetching emails by phone number
+  public query ({ caller }) func getEmailByPhoneNumber(_phoneNumber : Text) : async Text {
+    Runtime.trap("This feature is currently unsupported as Motoko does not support HTTP outcalls yet. Implement in TypeScript.");
   };
 };
