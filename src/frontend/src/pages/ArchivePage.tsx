@@ -26,24 +26,45 @@ export function ArchivePage() {
   return (
     <div className="min-h-dvh bg-background page-fade">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-border sticky top-0 bg-background/95 backdrop-blur-sm z-10">
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-border sticky top-0 bg-background/95 backdrop-blur-sm z-10 shadow-sm">
         <Button
           variant="ghost"
           size="icon"
+          className="rounded-xl w-9 h-9"
           onClick={() => navigate({ to: "/" })}
         >
-          <ArrowLeft size={20} />
+          <ArrowLeft size={18} />
         </Button>
-        <h1 className="font-bold text-lg">Archived chats</h1>
+        <h1
+          className="font-bold text-lg tracking-tight"
+          style={{ fontFamily: "'Sora', sans-serif" }}
+        >
+          Archived chats
+        </h1>
       </div>
 
       <div className="max-w-lg mx-auto py-2">
         {archivedChats.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-4">
-            <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
-              <Archive size={28} className="text-muted-foreground" />
+            <div
+              className="w-16 h-16 rounded-2xl flex items-center justify-center"
+              style={{
+                background: "oklch(var(--primary) / 0.08)",
+                border: "1px solid oklch(var(--primary) / 0.12)",
+              }}
+            >
+              <Archive
+                size={26}
+                className="text-primary/60"
+                strokeWidth={1.5}
+              />
             </div>
-            <p className="text-muted-foreground text-sm">No archived chats</p>
+            <div className="text-center">
+              <p className="font-semibold text-sm">Nothing archived</p>
+              <p className="text-muted-foreground text-xs mt-1">
+                Archived chats will appear here
+              </p>
+            </div>
           </div>
         ) : (
           archivedChats.map((chat) => {
@@ -57,7 +78,7 @@ export function ArchivePage() {
             return (
               <div
                 key={chat.id}
-                className="flex items-center gap-3 px-4 py-3 hover:bg-accent transition-colors"
+                className="flex items-center gap-3 px-4 py-3 hover:bg-accent/70 transition-colors border-b border-border/30 last:border-0"
               >
                 <button
                   type="button"

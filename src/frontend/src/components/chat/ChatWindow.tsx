@@ -13,12 +13,15 @@ import {
   ArrowLeft,
   Image,
   Info,
+  Loader2,
   Mic,
+  MicOff,
   MoreHorizontal,
   PhoneOff,
   Pin,
   Search,
   Send,
+  Square,
   VolumeX,
   Zap,
 } from "lucide-react";
@@ -68,6 +71,17 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+
+  // Voice recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordingStreamRef = useRef<MediaStream | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -93,6 +107,18 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages.length]);
+
+  // Cleanup recording on unmount
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      if (recordingStreamRef.current) {
+        for (const track of recordingStreamRef.current.getTracks()) {
+          track.stop();
+        }
+      }
+    };
+  }, []);
 
   // Vanish mode: delete seen messages after 5s
   useEffect(() => {
@@ -171,20 +197,125 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
-      const url = URL.createObjectURL(file);
+
       const isImage = file.type.startsWith("image/");
+      const isVideo = file.type.startsWith("video/");
+
+      setIsUploading(true);
+      setUploadProgress(0);
+
       try {
-        await sendMessage(chatId, currentUid, "", isImage ? "image" : "file", {
-          mediaUrl: isImage ? url : undefined,
-          mediaName: file.name,
-        });
+        // For now use a local object URL — in production this would upload to storage
+        // and return a permanent URL. We show a local preview immediately.
+        const localUrl = URL.createObjectURL(file);
+
+        await sendMessage(
+          chatId,
+          currentUid,
+          "",
+          isImage ? "image" : isVideo ? "video" : "file",
+          {
+            mediaUrl: localUrl,
+            mediaName: file.name,
+          },
+        );
+        toast.success(`${isImage ? "Photo" : isVideo ? "Video" : "File"} sent`);
       } catch {
         toast.error("Failed to send file");
+      } finally {
+        setIsUploading(false);
+        setUploadProgress(0);
+        e.target.value = "";
       }
-      e.target.value = "";
     },
     [chatId, currentUid, sendMessage],
   );
+
+  const startRecording = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordingStreamRef.current = stream;
+      const recorder = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+          ? "audio/webm;codecs=opus"
+          : "audio/webm",
+      });
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = async () => {
+        const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        // Stop all tracks
+        for (const track of stream.getTracks()) track.stop();
+        recordingStreamRef.current = null;
+
+        if (blob.size === 0) return;
+
+        setIsUploading(true);
+        try {
+          const voiceUrl = URL.createObjectURL(blob);
+          const duration = recordingDuration;
+          await sendMessage(chatId, currentUid, "", "voice", {
+            mediaUrl: voiceUrl,
+            mediaDuration: duration,
+          });
+          toast.success("Voice message sent");
+        } catch {
+          toast.error("Failed to send voice message");
+        } finally {
+          setIsUploading(false);
+        }
+      };
+
+      recorder.start(100); // collect in 100ms chunks
+      mediaRecorderRef.current = recorder;
+      setIsRecording(true);
+      setRecordingDuration(0);
+
+      // Start duration counter
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration((d) => d + 1);
+      }, 1000);
+    } catch {
+      toast.error("Microphone permission denied");
+    }
+  }, [chatId, currentUid, sendMessage, recordingDuration]);
+
+  const stopRecording = useCallback(() => {
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    if (mediaRecorderRef.current?.state !== "inactive") {
+      mediaRecorderRef.current?.stop();
+    }
+    setIsRecording(false);
+    setRecordingDuration(0);
+  }, []);
+
+  const cancelRecording = useCallback(() => {
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    if (mediaRecorderRef.current?.state !== "inactive") {
+      mediaRecorderRef.current?.stop();
+      // Clear the chunks so nothing gets sent
+      audioChunksRef.current = [];
+    }
+    if (recordingStreamRef.current) {
+      for (const track of recordingStreamRef.current.getTracks()) {
+        track.stop();
+      }
+      recordingStreamRef.current = null;
+    }
+    setIsRecording(false);
+    setRecordingDuration(0);
+    toast.info("Recording cancelled");
+  }, []);
 
   // Typing indicator: is the OTHER user typing?
   const isOtherTyping = Object.entries(chat?.typing ?? {}).some(
@@ -214,6 +345,12 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
     }
     return -1;
   })();
+
+  const formatRecordingTime = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${String(s).padStart(2, "0")}`;
+  };
 
   if (!chat) {
     return (
@@ -248,15 +385,15 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-background/95 backdrop-blur-sm sticky top-0 z-10">
+      <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-background/95 backdrop-blur-md sticky top-0 z-10 shadow-sm">
         {onBack && (
           <Button
             variant="ghost"
             size="icon"
             onClick={onBack}
-            className="-ml-2 md:hidden"
+            className="-ml-1 md:hidden rounded-xl w-9 h-9"
           >
-            <ArrowLeft size={20} />
+            <ArrowLeft size={18} />
           </Button>
         )}
 
@@ -272,14 +409,17 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
             size="md"
           />
           <div className="flex-1 min-w-0 text-left">
-            <p className="font-semibold text-sm truncate">
+            <p className="font-semibold text-sm truncate tracking-tight">
               @{otherUser.username}
             </p>
             <p className="text-xs text-muted-foreground">
               {isOtherTyping ? (
-                <span className="text-primary animate-pulse">typing...</span>
+                <span className="text-primary font-medium">typing...</span>
               ) : otherUser.onlineStatus ? (
-                "Active now"
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-online-dot inline-block" />
+                  Active now
+                </span>
               ) : (
                 `Last seen ${formatLastSeen(otherUser.lastSeen)}`
               )}
@@ -354,8 +494,25 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
         </div>
       )}
 
+      {/* Upload progress */}
+      {isUploading && (
+        <div className="px-4 py-1.5 border-b border-border bg-primary/5">
+          <div className="flex items-center gap-2">
+            <Loader2 size={12} className="text-primary animate-spin" />
+            <span className="text-xs text-primary font-medium">
+              Uploading media...
+            </span>
+            {uploadProgress > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {uploadProgress}%
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto chat-scroll py-2">
+      <div className="flex-1 overflow-y-auto chat-scroll py-2 chat-messages-bg">
         {filteredMessages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full gap-3 py-12">
             <UserAvatar
@@ -478,25 +635,62 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
 
       {/* Input bar */}
       {isBlocked || isBlockedByOther ? (
-        <div className="px-4 py-3 border-t border-border bg-background text-center">
+        <div className="px-4 py-4 border-t border-border bg-background text-center">
           <p className="text-sm text-muted-foreground">
             {isBlocked
               ? "You blocked this user"
               : "You can't message this person"}
           </p>
         </div>
+      ) : isRecording ? (
+        /* Recording UI */
+        <div className="flex items-center gap-3 px-4 py-3 border-t border-border bg-background input-bar-mobile">
+          <div className="w-2.5 h-2.5 rounded-full bg-destructive record-pulse flex-shrink-0" />
+          {/* Waveform animation */}
+          <div className="flex items-center gap-0.5 flex-1">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div
+                key={i}
+                className="wave-bar w-1 rounded-full bg-destructive/70"
+                style={{ animationDelay: `${(i - 1) * 0.1}s` }}
+              />
+            ))}
+            <span className="ml-2 text-sm font-mono text-destructive font-medium tabular-nums">
+              {formatRecordingTime(recordingDuration)}
+            </span>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={cancelRecording}
+            className="text-muted-foreground hover:text-destructive w-9 h-9 rounded-xl flex-shrink-0"
+            title="Cancel recording"
+          >
+            <MicOff size={18} />
+          </Button>
+          <Button
+            size="icon"
+            onClick={stopRecording}
+            className="bg-destructive hover:bg-destructive/90 w-9 h-9 rounded-xl flex-shrink-0"
+            title="Stop and send"
+          >
+            <Square size={14} className="text-white fill-white" />
+          </Button>
+        </div>
       ) : (
-        <div className="flex items-center gap-2 px-3 py-3 border-t border-border bg-background input-bar-mobile">
+        <div className="flex items-end gap-2 px-3 py-3 border-t border-border bg-background input-bar-mobile">
           <EmojiPicker onEmojiSelect={(e) => setInputText((p) => p + e)} />
-          <Input
-            ref={inputRef}
-            value={inputText}
-            onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            placeholder="Message..."
-            className="flex-1 rounded-full bg-muted/50 border-0 focus-visible:ring-1 focus-visible:ring-primary px-4"
-            disabled={isSending}
-          />
+          <div className="flex-1 relative">
+            <Input
+              ref={inputRef}
+              value={inputText}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              placeholder="Message..."
+              className="rounded-2xl bg-muted/60 border border-border/60 focus-visible:ring-1 focus-visible:ring-primary/50 focus-visible:border-primary/40 px-4 h-10 text-sm transition-all"
+              disabled={isSending || isUploading}
+            />
+          </div>
           <input
             ref={fileInputRef}
             type="file"
@@ -508,26 +702,37 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
             variant="ghost"
             size="icon"
             onClick={() => fileInputRef.current?.click()}
-            className="text-muted-foreground hover:text-foreground flex-shrink-0"
+            disabled={isUploading}
+            className="text-muted-foreground hover:text-primary flex-shrink-0 h-10 w-10 rounded-xl transition-colors"
           >
-            <Image size={22} />
+            {isUploading ? (
+              <Loader2 size={18} className="animate-spin" />
+            ) : (
+              <Image size={20} />
+            )}
           </Button>
           {inputText.trim() ? (
             <Button
               size="icon"
               onClick={handleSend}
               disabled={isSending}
-              className="rounded-full flex-shrink-0"
+              className="rounded-xl flex-shrink-0 h-10 w-10 gradient-btn shadow-sm"
             >
-              <Send size={16} />
+              {isSending ? (
+                <div className="w-4 h-4 border-2 border-white/60 border-t-white rounded-full animate-spin" />
+              ) : (
+                <Send size={15} className="text-white" />
+              )}
             </Button>
           ) : (
             <Button
               variant="ghost"
               size="icon"
-              className="text-muted-foreground hover:text-foreground flex-shrink-0"
+              onClick={startRecording}
+              className="text-muted-foreground hover:text-primary flex-shrink-0 h-10 w-10 rounded-xl transition-colors"
+              title="Record voice message"
             >
-              <Mic size={22} />
+              <Mic size={20} />
             </Button>
           )}
         </div>

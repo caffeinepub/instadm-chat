@@ -51,11 +51,25 @@ export function MessageContextMenu({
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 bg-popover border border-border rounded-2xl shadow-xl overflow-hidden context-menu-enter"
-      style={{ left: clampedX, top: clampedY, minWidth: menuWidth }}
+      className="fixed z-50 rounded-2xl overflow-hidden context-menu-enter"
+      style={{
+        left: clampedX,
+        top: clampedY,
+        minWidth: menuWidth,
+        background: "oklch(var(--popover))",
+        border: "1px solid oklch(var(--border))",
+        boxShadow:
+          "0 4px 24px oklch(0.05 0.01 270 / 0.6), 0 1px 4px oklch(0.05 0.01 270 / 0.3), inset 0 1px 0 oklch(var(--border) / 0.5)",
+      }}
     >
-      {/* Reactions */}
-      <div className="flex items-center gap-1 px-3 py-2 border-b border-border">
+      {/* Reactions row */}
+      <div
+        className="flex items-center gap-0.5 px-2 py-2.5"
+        style={{
+          borderBottom: "1px solid oklch(var(--border) / 0.6)",
+          background: "oklch(var(--card) / 0.5)",
+        }}
+      >
         {REACTION_EMOJIS.map((emoji) => (
           <button
             type="button"
@@ -64,7 +78,7 @@ export function MessageContextMenu({
               onReact(emoji);
               onClose();
             }}
-            className="text-xl hover:scale-125 transition-transform p-1 rounded-full hover:bg-accent"
+            className="text-[22px] hover:scale-130 active:scale-110 transition-transform duration-150 p-1.5 rounded-xl hover:bg-accent/80"
             title={emoji}
           >
             {emoji}
@@ -73,9 +87,9 @@ export function MessageContextMenu({
       </div>
 
       {/* Actions */}
-      <div className="py-1">
+      <div className="py-1.5">
         <MenuAction
-          icon={<Reply size={15} />}
+          icon={<Reply size={14} />}
           label="Reply"
           onClick={() => {
             onReply();
@@ -84,7 +98,7 @@ export function MessageContextMenu({
         />
         {isSender && onEdit && (
           <MenuAction
-            icon={<Edit2 size={15} />}
+            icon={<Edit2 size={14} />}
             label="Edit"
             onClick={() => {
               onEdit();
@@ -93,15 +107,19 @@ export function MessageContextMenu({
           />
         )}
         <MenuAction
-          icon={<Share2 size={15} />}
+          icon={<Share2 size={14} />}
           label="Forward"
           onClick={() => {
             onForward();
             onClose();
           }}
         />
+        <div
+          className="mx-3 my-1 h-px"
+          style={{ background: "oklch(var(--border) / 0.5)" }}
+        />
         <MenuAction
-          icon={<Trash2 size={15} />}
+          icon={<Trash2 size={14} />}
           label="Delete for me"
           onClick={() => {
             onDeleteForMe();
@@ -111,7 +129,7 @@ export function MessageContextMenu({
         />
         {isSender && onDeleteForEveryone && (
           <MenuAction
-            icon={<X size={15} />}
+            icon={<X size={14} />}
             label="Delete for everyone"
             onClick={() => {
               onDeleteForEveryone();
@@ -141,13 +159,20 @@ function MenuAction({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex items-center gap-3 w-full px-4 py-2.5 text-sm font-medium transition-colors",
+        "flex items-center gap-3 w-full px-4 py-2.5 text-sm font-medium transition-colors mx-0",
         danger
           ? "text-destructive hover:bg-destructive/10"
-          : "text-foreground hover:bg-accent",
+          : "text-foreground hover:bg-accent/80",
       )}
     >
-      {icon}
+      <span
+        className={cn(
+          "flex-shrink-0",
+          danger ? "text-destructive/80" : "text-muted-foreground",
+        )}
+      >
+        {icon}
+      </span>
       {label}
     </button>
   );

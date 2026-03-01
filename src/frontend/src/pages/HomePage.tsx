@@ -80,13 +80,16 @@ export function HomePage() {
     <TooltipProvider delayDuration={300}>
       <div className="flex h-dvh bg-background overflow-hidden">
         {/* ── Icon nav (desktop) ── */}
-        <div className="hidden md:flex flex-col items-center gap-1 w-[60px] h-full bg-sidebar border-r border-sidebar-border py-4 flex-shrink-0">
+        <div className="hidden md:flex flex-col items-center gap-1 w-[64px] h-full bg-sidebar border-r border-sidebar-border py-4 flex-shrink-0 nav-rail">
           {/* App icon */}
-          <div className="mb-4 flex items-center justify-center w-9 h-9 rounded-xl bg-primary">
-            <MessageCircle size={18} className="text-white" strokeWidth={2.5} />
+          <div
+            className="mb-5 flex items-center justify-center w-10 h-10 rounded-2xl bg-primary shadow-sm"
+            style={{ boxShadow: "0 2px 12px oklch(var(--primary) / 0.3)" }}
+          >
+            <MessageCircle size={20} className="text-white" strokeWidth={2.5} />
           </div>
 
-          <div className="flex-1 flex flex-col items-center gap-1 w-full px-2">
+          <div className="flex-1 flex flex-col items-center gap-1.5 w-full px-2">
             {navItems.map((item) => (
               <Tooltip key={item.label}>
                 <TooltipTrigger asChild>
@@ -96,8 +99,8 @@ export function HomePage() {
                     className={cn(
                       "relative w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-150",
                       item.isActive
-                        ? "bg-primary text-primary-foreground"
-                        : "text-sidebar-foreground hover:bg-sidebar-accent",
+                        ? "nav-icon-active"
+                        : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
                     )}
                   >
                     {item.icon}
@@ -124,7 +127,7 @@ export function HomePage() {
                   onClick={() =>
                     navigate({ to: `/profile/${currentUser?.username}` })
                   }
-                  className="w-8 h-8 rounded-full overflow-hidden ring-2 ring-border hover:ring-primary transition-all"
+                  className="w-9 h-9 rounded-full overflow-hidden ring-2 ring-border hover:ring-primary transition-all"
                 >
                   <UserAvatar
                     src={currentUser?.profilePicture}
@@ -143,7 +146,7 @@ export function HomePage() {
                 <button
                   type="button"
                   onClick={logout}
-                  className="w-8 h-8 rounded-xl flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
+                  className="w-9 h-9 rounded-xl flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
                 >
                   <LogOut size={16} />
                 </button>
@@ -158,7 +161,7 @@ export function HomePage() {
         {/* ── Sidebar (chat list) ── */}
         <div
           className={cn(
-            "w-full md:w-[300px] lg:w-[320px] flex-shrink-0 h-full flex flex-col",
+            "w-full md:w-[300px] lg:w-[330px] flex-shrink-0 h-full flex flex-col",
             mobileChatOpen ? "hidden md:flex" : "flex",
           )}
         >
@@ -210,25 +213,56 @@ export function HomePage() {
 
 function EmptyState() {
   return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-5 text-center px-8 bg-background">
-      <div className="relative">
-        <div className="w-24 h-24 rounded-full bg-primary/8 flex items-center justify-center">
+    <div className="flex-1 flex flex-col items-center justify-center gap-6 text-center px-8 bg-background relative overflow-hidden">
+      {/* Atmospheric background glows */}
+      <div
+        className="absolute top-1/4 left-1/2 -translate-x-1/2 w-80 h-80 rounded-full pointer-events-none"
+        style={{
+          background:
+            "radial-gradient(circle, oklch(0.64 0.27 278 / 0.06), transparent 70%)",
+        }}
+      />
+      <div
+        className="absolute bottom-1/4 left-1/3 w-60 h-60 rounded-full pointer-events-none"
+        style={{
+          background:
+            "radial-gradient(circle, oklch(0.62 0.22 300 / 0.04), transparent 70%)",
+        }}
+      />
+      <div className="relative z-10 flex flex-col items-center gap-6">
+        <div
+          className="w-24 h-24 rounded-3xl flex items-center justify-center"
+          style={{
+            background: "oklch(var(--primary) / 0.08)",
+            border: "1px solid oklch(var(--primary) / 0.14)",
+            boxShadow: "0 8px 32px oklch(var(--primary) / 0.08)",
+          }}
+        >
           <MessageSquareDashed
             size={40}
             className="text-primary/60"
             strokeWidth={1.5}
           />
         </div>
-        <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-online-dot flex items-center justify-center">
-          <div className="w-2.5 h-2.5 rounded-full bg-white" />
+        <div className="max-w-xs">
+          <h2
+            className="text-xl font-bold tracking-tight"
+            style={{ fontFamily: "'Sora', sans-serif" }}
+          >
+            Your messages
+          </h2>
+          <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
+            Search for a friend by their username to start a conversation.
+          </p>
         </div>
-      </div>
-      <div className="max-w-xs">
-        <h2 className="text-xl font-bold tracking-tight">Your messages</h2>
-        <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-          Search for a friend by their username to start a conversation. Your
-          chats will appear here.
-        </p>
+        <div className="flex flex-col items-center gap-2">
+          <div className="flex items-center gap-3 px-4 py-2 rounded-full bg-muted/50 border border-border/50">
+            <div className="w-2 h-2 rounded-full bg-online-dot" />
+            <span className="text-xs text-muted-foreground font-medium">
+              Messages are end-to-end private
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   );

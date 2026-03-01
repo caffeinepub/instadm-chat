@@ -18,6 +18,18 @@ const sizeMap = {
   xl: { avatar: "w-20 h-20", dot: "w-4 h-4", text: "text-xl" },
 };
 
+// Generate a rich, unique gradient per username using hue derived from char codes
+function getUserGradient(username: string): string {
+  let hash = 0;
+  for (let i = 0; i < username.length; i++) {
+    hash = username.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const hue1 = Math.abs(hash) % 360;
+  const hue2 = (hue1 + 50) % 360;
+  // Use vivid oklch colors with high chroma for strong, readable gradients
+  return `linear-gradient(135deg, oklch(0.52 0.22 ${hue1}), oklch(0.45 0.25 ${hue2}))`;
+}
+
 export function UserAvatar({
   src,
   username,
@@ -28,14 +40,16 @@ export function UserAvatar({
 }: UserAvatarProps) {
   const { avatar, dot, text } = sizeMap[size];
   const initials = username.slice(0, 2).toUpperCase();
+  const gradient = getUserGradient(username);
 
   return (
     <div className={cn("relative inline-block flex-shrink-0", className)}>
       <div
         className={cn(
-          "rounded-full overflow-hidden bg-gradient-to-br from-primary/30 to-primary/60 flex items-center justify-center ring-2 ring-background",
+          "rounded-full overflow-hidden flex items-center justify-center ring-2 ring-background",
           avatar,
         )}
+        style={src ? undefined : { background: gradient }}
       >
         {src ? (
           <img
@@ -47,9 +61,10 @@ export function UserAvatar({
         ) : (
           <span
             className={cn(
-              "font-semibold text-primary-foreground select-none",
+              "font-bold text-white select-none leading-none",
               text,
             )}
+            style={{ textShadow: "0 1px 2px rgba(0,0,0,0.3)" }}
           >
             {initials}
           </span>

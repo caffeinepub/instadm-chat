@@ -19,103 +19,112 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  src: url("/assets/fonts/PlusJakartaSans[wght].woff2") format("woff2");
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
 
 @layer base {
   :root {
-    --radius: 0.625rem;
+    --radius: 0.75rem;
 
-    /* Linkr Light Mode — crisp white with vibrant purple accents */
-    --background: 0.99 0 0;
-    --foreground: 0.12 0.008 285;
+    /* ── Linkr Light Mode — Pink + Violet Instagram-inspired ── */
+    --background: 0.99 0.002 350;
+    --foreground: 0.12 0.012 330;
     --card: 1 0 0;
-    --card-foreground: 0.12 0.008 285;
+    --card-foreground: 0.12 0.012 330;
     --popover: 1 0 0;
-    --popover-foreground: 0.12 0.008 285;
-    --primary: 0.60 0.28 280;
+    --popover-foreground: 0.12 0.012 330;
+    --primary: 0.62 0.27 345;
     --primary-foreground: 1 0 0;
-    --secondary: 0.95 0.005 285;
-    --secondary-foreground: 0.2 0.01 285;
-    --muted: 0.95 0.005 285;
-    --muted-foreground: 0.48 0.012 285;
-    --accent: 0.95 0.005 285;
-    --accent-foreground: 0.12 0.008 285;
+    --secondary: 0.60 0.25 290;
+    --secondary-foreground: 1 0 0;
+    --muted: 0.94 0.008 340;
+    --muted-foreground: 0.50 0.015 340;
+    --accent: 0.94 0.01 340;
+    --accent-foreground: 0.12 0.012 330;
     --destructive: 0.577 0.245 27.325;
     --destructive-foreground: 1 0 0;
-    --border: 0.89 0.008 285;
-    --input: 0.89 0.008 285;
-    --ring: 0.60 0.28 280;
+    --border: 0.88 0.012 340;
+    --input: 0.88 0.012 340;
+    --ring: 0.62 0.27 345;
 
     /* Chat bubbles */
-    --bubble-sender: 0.60 0.28 280;
-    --bubble-receiver: 0.94 0.007 285;
-    --online-dot: 0.73 0.2 145;
+    --bubble-sender: 0.62 0.27 345;
+    --bubble-receiver: 0.93 0.01 340;
+    --online-dot: 0.71 0.2 145;
 
     /* Sidebar */
-    --sidebar: 0.975 0.006 285;
-    --sidebar-foreground: 0.12 0.008 285;
-    --sidebar-primary: 0.60 0.28 280;
+    --sidebar: 0.97 0.007 340;
+    --sidebar-foreground: 0.12 0.012 330;
+    --sidebar-primary: 0.62 0.27 345;
     --sidebar-primary-foreground: 1 0 0;
-    --sidebar-accent: 0.93 0.008 285;
-    --sidebar-accent-foreground: 0.12 0.008 285;
-    --sidebar-border: 0.89 0.008 285;
-    --sidebar-ring: 0.60 0.28 280;
+    --sidebar-accent: 0.92 0.011 340;
+    --sidebar-accent-foreground: 0.12 0.012 330;
+    --sidebar-border: 0.88 0.012 340;
+    --sidebar-ring: 0.62 0.27 345;
 
-    --chart-1: 0.646 0.222 41.116;
-    --chart-2: 0.6 0.118 184.704;
-    --chart-3: 0.398 0.07 227.392;
+    --chart-1: 0.62 0.27 345;
+    --chart-2: 0.60 0.25 290;
+    --chart-3: 0.65 0.22 310;
     --chart-4: 0.828 0.189 84.429;
-    --chart-5: 0.769 0.188 70.08;
+    --chart-5: 0.71 0.2 145;
   }
 
   .dark {
-    /* Linkr Dark Mode — deep dark with vibrant purple-pink-cyan mood */
-    --background: 0.08 0.015 270;
-    --foreground: 0.95 0.005 270;
-    --card: 0.12 0.018 268;
-    --card-foreground: 0.95 0.005 270;
-    --popover: 0.14 0.018 268;
-    --popover-foreground: 0.95 0.005 270;
-    --primary: 0.65 0.28 280;
+    /* ── Linkr Dark Mode — deep dark + vibrant pink/violet ── */
+    --background: 0.085 0.016 268;
+    --foreground: 0.94 0.006 270;
+    --card: 0.115 0.02 266;
+    --card-foreground: 0.94 0.006 270;
+    --popover: 0.13 0.02 266;
+    --popover-foreground: 0.94 0.006 270;
+    --primary: 0.62 0.27 345;
     --primary-foreground: 1 0 0;
-    --secondary: 0.18 0.018 268;
-    --secondary-foreground: 0.88 0.006 270;
-    --muted: 0.18 0.018 268;
-    --muted-foreground: 0.55 0.015 270;
-    --accent: 0.2 0.022 268;
-    --accent-foreground: 0.93 0.005 270;
-    --destructive: 0.65 0.22 22;
+    --secondary: 0.58 0.25 290;
+    --secondary-foreground: 1 0 0;
+    --muted: 0.175 0.02 266;
+    --muted-foreground: 0.55 0.016 270;
+    --accent: 0.195 0.022 266;
+    --accent-foreground: 0.93 0.006 270;
+    --destructive: 0.64 0.22 22;
     --destructive-foreground: 1 0 0;
-    --border: 0.22 0.02 268;
-    --input: 0.22 0.02 268;
-    --ring: 0.65 0.28 280;
+    --border: 0.215 0.022 266;
+    --input: 0.215 0.022 266;
+    --ring: 0.62 0.27 345;
 
-    /* Vibrant bubble colors */
-    --bubble-sender: 0.60 0.28 280;
-    --bubble-receiver: 0.2 0.022 268;
-    --online-dot: 0.73 0.2 145;
+    /* Vibrant pink bubble */
+    --bubble-sender: 0.62 0.27 345;
+    --bubble-receiver: 0.195 0.022 266;
+    --online-dot: 0.71 0.2 145;
 
-    --sidebar: 0.10 0.018 270;
-    --sidebar-foreground: 0.95 0.005 270;
-    --sidebar-primary: 0.65 0.28 280;
+    --sidebar: 0.095 0.018 268;
+    --sidebar-foreground: 0.94 0.006 270;
+    --sidebar-primary: 0.62 0.27 345;
     --sidebar-primary-foreground: 1 0 0;
-    --sidebar-accent: 0.18 0.018 268;
-    --sidebar-accent-foreground: 0.93 0.005 270;
-    --sidebar-border: 0.2 0.02 268;
-    --sidebar-ring: 0.65 0.28 280;
+    --sidebar-accent: 0.175 0.02 266;
+    --sidebar-accent-foreground: 0.93 0.006 270;
+    --sidebar-border: 0.195 0.022 266;
+    --sidebar-ring: 0.62 0.27 345;
 
-    --chart-1: 0.488 0.243 264.376;
-    --chart-2: 0.696 0.17 162.48;
-    --chart-3: 0.769 0.188 70.08;
+    --chart-1: 0.62 0.27 345;
+    --chart-2: 0.58 0.25 290;
+    --chart-3: 0.65 0.22 310;
     --chart-4: 0.627 0.265 303.9;
     --chart-5: 0.645 0.246 16.439;
   }
 
   * {
     @apply border-border;
+    box-sizing: border-box;
   }
 
   html {
     color-scheme: light;
+    -webkit-text-size-adjust: 100%;
   }
   html.dark {
     color-scheme: dark;
@@ -123,7 +132,7 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: "Sora", "Figtree", system-ui, sans-serif;
+    font-family: "Plus Jakarta Sans", "Sora", "Figtree", system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow: hidden;
@@ -139,9 +148,10 @@
 
 /* ─── Chat bubble shapes ─────────────────────────────────────── */
 .bubble-sender {
-  background: oklch(var(--bubble-sender));
+  background: linear-gradient(135deg, oklch(0.62 0.27 345), oklch(0.58 0.25 310));
   color: #ffffff;
   border-radius: 18px 18px 4px 18px;
+  box-shadow: 0 2px 8px oklch(0.62 0.27 345 / 0.4);
 }
 
 .bubble-receiver {
@@ -195,10 +205,15 @@
   padding-bottom: max(env(safe-area-inset-bottom, 0px), 12px);
 }
 
+/* ─── Safe bottom padding ────────────────────────────────────── */
+.safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
+}
+
 /* ─── Online dot pulse ───────────────────────────────────────── */
 @keyframes onlinePulse {
-  0%, 100% { box-shadow: 0 0 0 0 oklch(0.73 0.2 145 / 0.6); }
-  50% { box-shadow: 0 0 0 4px oklch(0.73 0.2 145 / 0); }
+  0%, 100% { box-shadow: 0 0 0 0 oklch(0.71 0.2 145 / 0.6); }
+  50% { box-shadow: 0 0 0 4px oklch(0.71 0.2 145 / 0); }
 }
 .online-pulse {
   animation: onlinePulse 2.5s infinite;
@@ -290,22 +305,22 @@
 
 /* ─── Gradient text ──────────────────────────────────────────── */
 .gradient-text {
-  background: linear-gradient(135deg, oklch(0.78 0.2 290), oklch(0.72 0.22 220), oklch(0.82 0.18 180));
+  background: linear-gradient(135deg, oklch(0.72 0.27 345), oklch(0.65 0.28 300), oklch(0.60 0.25 290));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
 .gradient-text-vibrant {
-  background: linear-gradient(135deg, oklch(0.75 0.26 300), oklch(0.68 0.28 280), oklch(0.72 0.22 220));
+  background: linear-gradient(135deg, oklch(0.75 0.27 345), oklch(0.68 0.28 320), oklch(0.62 0.25 290));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
-/* ─── Gradient button ────────────────────────────────────────── */
+/* ─── Gradient button — Pink to Violet ──────────────────────── */
 .gradient-btn {
-  background: linear-gradient(135deg, oklch(0.55 0.28 290), oklch(0.60 0.25 260), oklch(0.65 0.22 220));
+  background: linear-gradient(135deg, oklch(0.62 0.27 345), oklch(0.60 0.26 320), oklch(0.58 0.25 290));
   transition: all 0.3s ease;
   position: relative;
   overflow: hidden;
@@ -314,7 +329,7 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, oklch(0.60 0.30 290), oklch(0.65 0.27 260), oklch(0.70 0.24 220));
+  background: linear-gradient(135deg, oklch(0.66 0.28 345), oklch(0.63 0.27 320), oklch(0.61 0.26 290));
   opacity: 0;
   transition: opacity 0.3s ease;
 }
@@ -322,7 +337,7 @@
   opacity: 1;
 }
 .gradient-btn:hover {
-  box-shadow: 0 0 40px oklch(0.55 0.28 285 / 0.5), 0 8px 24px oklch(0.55 0.28 285 / 0.3);
+  box-shadow: 0 0 40px oklch(0.62 0.27 345 / 0.5), 0 8px 24px oklch(0.62 0.27 345 / 0.3);
   transform: translateY(-1px);
 }
 .gradient-btn:active {
@@ -346,18 +361,18 @@
 
 /* ─── II button glow ─────────────────────────────────────────── */
 .ii-btn-glow {
-  box-shadow: 0 0 0 0 oklch(0.65 0.28 280 / 0.5);
+  box-shadow: 0 0 0 0 oklch(0.62 0.27 345 / 0.5);
   transition: box-shadow 0.3s ease, transform 0.2s ease;
 }
 .ii-btn-glow:hover {
-  box-shadow: 0 0 0 6px oklch(0.65 0.28 280 / 0.15), 0 8px 30px oklch(0.65 0.28 280 / 0.35);
+  box-shadow: 0 0 0 6px oklch(0.62 0.27 345 / 0.15), 0 8px 30px oklch(0.62 0.27 345 / 0.35);
   transform: translateY(-1px);
 }
 
 /* ─── Login chat bubble float ────────────────────────────────── */
 @keyframes bubbleFloat {
   0%, 100% { transform: translateY(0px) rotate(-1deg); opacity: 0.15; }
-  50% { transform: translateY(-12px) rotate(1deg); opacity: 0.2; }
+  50% { transform: translateY(-12px) rotate(1deg); opacity: 0.22; }
 }
 @keyframes bubbleFloat2 {
   0%, 100% { transform: translateY(0px) rotate(2deg); opacity: 0.12; }
@@ -394,4 +409,171 @@
   background: linear-gradient(90deg, oklch(0.3 0.03 270), oklch(0.35 0.05 290), oklch(0.3 0.03 270));
   background-size: 200% auto;
   animation: shimmer 3s linear infinite;
+}
+
+/* ─── Chat input focus ring ──────────────────────────────────── */
+.chat-input-ring:focus-within {
+  outline: none;
+  box-shadow: 0 0 0 2px oklch(var(--primary) / 0.25);
+  border-color: oklch(var(--primary) / 0.5);
+}
+
+/* ─── Message hover actions ──────────────────────────────────── */
+.message-row:hover .message-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.message-actions {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+/* ─── Improved scrollbar for sidebar ────────────────────────── */
+.sidebar-scroll::-webkit-scrollbar {
+  width: 2px;
+}
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: oklch(var(--border));
+  border-radius: 4px;
+}
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ─── Active chat highlight ──────────────────────────────────── */
+
+/* ─── Avatar ring pulse for new message ──────────────────────── */
+@keyframes ringPulse {
+  0% { box-shadow: 0 0 0 0 oklch(var(--primary) / 0.5); }
+  70% { box-shadow: 0 0 0 6px oklch(var(--primary) / 0); }
+  100% { box-shadow: 0 0 0 0 oklch(var(--primary) / 0); }
+}
+.avatar-ring-pulse {
+  animation: ringPulse 1.5s ease-out;
+}
+
+/* ─── Smooth backdrop for modals ─────────────────────────────── */
+[data-radix-dialog-overlay] {
+  backdrop-filter: blur(4px);
+}
+
+/* ─── Improved input styling ─────────────────────────────────── */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+textarea {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* ─── Nav icon active glow ───────────────────────────────────── */
+.nav-icon-active {
+  background: linear-gradient(135deg, oklch(0.62 0.27 345), oklch(0.58 0.25 310));
+  box-shadow: 0 2px 12px oklch(0.62 0.27 345 / 0.4);
+  color: white;
+}
+
+/* ─── Chat message date separator ────────────────────────────── */
+.date-separator {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+}
+.date-separator span {
+  font-size: 0.7rem;
+  color: oklch(var(--muted-foreground));
+  font-weight: 500;
+  white-space: nowrap;
+}
+.date-separator::before,
+.date-separator::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: oklch(var(--border));
+}
+
+/* ─── Chat window message area subtle pattern ────────────────── */
+.chat-messages-bg {
+  background-image: 
+    radial-gradient(circle at 20% 80%, oklch(0.62 0.27 345 / 0.04) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, oklch(0.58 0.25 290 / 0.03) 0%, transparent 50%);
+}
+
+/* ─── Improved nav rail ──────────────────────────────────────── */
+.nav-rail {
+  background: linear-gradient(180deg, oklch(var(--sidebar)), oklch(var(--background)));
+}
+
+/* ─── Sub-page header shadow ─────────────────────────────────── */
+.page-header {
+  box-shadow: 0 1px 0 oklch(var(--border)), 0 4px 12px oklch(var(--background) / 0.5);
+}
+
+/* ─── Card hover lift ────────────────────────────────────────── */
+.card-lift {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.card-lift:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px oklch(var(--background) / 0.3);
+}
+
+/* ─── Input glow focus ───────────────────────────────────────── */
+.input-glow:focus-within {
+  box-shadow: 0 0 0 3px oklch(var(--primary) / 0.12), 0 0 0 1px oklch(var(--primary) / 0.3);
+}
+
+/* ─── Voice recording pulse ──────────────────────────────────── */
+@keyframes recordPulse {
+  0%, 100% { box-shadow: 0 0 0 0 oklch(0.577 0.245 27 / 0.5); }
+  50% { box-shadow: 0 0 0 8px oklch(0.577 0.245 27 / 0); }
+}
+.record-pulse {
+  animation: recordPulse 1.2s ease-in-out infinite;
+}
+
+/* ─── Waveform animation ─────────────────────────────────────── */
+@keyframes waveBar {
+  0%, 100% { height: 4px; }
+  50% { height: 16px; }
+}
+.wave-bar { animation: waveBar 0.8s ease-in-out infinite; }
+.wave-bar:nth-child(2) { animation-delay: 0.1s; }
+.wave-bar:nth-child(3) { animation-delay: 0.2s; }
+.wave-bar:nth-child(4) { animation-delay: 0.3s; }
+.wave-bar:nth-child(5) { animation-delay: 0.2s; }
+.wave-bar:nth-child(6) { animation-delay: 0.1s; }
+
+/* ─── Follow request badge ───────────────────────────────────── */
+@keyframes followBadgePop {
+  0% { transform: scale(0.8); }
+  70% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+.follow-badge-pop {
+  animation: followBadgePop 0.25s ease-out forwards;
+}
+
+/* ─── Upload progress ────────────────────────────────────────── */
+@keyframes uploadProgress {
+  0% { width: 0%; }
+  100% { width: 100%; }
+}
+
+/* ─── Pink/violet gradient sidebar active ────────────────────── */
+.chat-item-active {
+  background: oklch(var(--sidebar-accent));
+  position: relative;
+}
+.chat-item-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 20%;
+  bottom: 20%;
+  width: 3px;
+  background: linear-gradient(180deg, oklch(0.62 0.27 345), oklch(0.58 0.25 290));
+  border-radius: 0 2px 2px 0;
 }

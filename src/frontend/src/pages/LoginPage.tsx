@@ -7,52 +7,50 @@ export function LoginPage() {
   const isDisabled = isLoggingIn || isInitializing;
 
   return (
-    <div className="min-h-dvh flex flex-col items-center justify-center relative overflow-hidden bg-[oklch(0.07_0.018_270)]">
+    <div className="min-h-dvh flex flex-col items-center justify-center relative overflow-hidden bg-background">
       {/* ── Animated background orbs ── */}
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        {/* Large purple orb top-right */}
+        {/* Large pink orb top-right */}
         <div
           className="float-orb absolute top-[-15%] right-[-10%] w-[600px] h-[600px] rounded-full"
           style={
             {
               "--duration": "10s",
               background:
-                "radial-gradient(circle at 40% 40%, oklch(0.60 0.28 280 / 0.35) 0%, oklch(0.55 0.25 300 / 0.15) 50%, transparent 70%)",
+                "radial-gradient(circle at 40% 40%, oklch(0.62 0.27 345 / 0.35) 0%, oklch(0.58 0.25 330 / 0.15) 50%, transparent 70%)",
             } as React.CSSProperties
           }
         />
-        {/* Pink orb left */}
+        {/* Violet orb left */}
         <div
           className="float-orb-reverse absolute top-[30%] left-[-15%] w-[500px] h-[500px] rounded-full"
           style={
             {
               "--duration": "13s",
               background:
-                "radial-gradient(circle at 60% 40%, oklch(0.68 0.25 330 / 0.28) 0%, oklch(0.65 0.22 310 / 0.12) 50%, transparent 70%)",
+                "radial-gradient(circle at 60% 40%, oklch(0.58 0.25 290 / 0.28) 0%, oklch(0.55 0.22 305 / 0.12) 50%, transparent 70%)",
             } as React.CSSProperties
           }
         />
-        {/* Cyan orb bottom-right */}
+        {/* Pink-violet orb bottom-right */}
         <div
           className="float-orb-slow absolute bottom-[-10%] right-[20%] w-[400px] h-[400px] rounded-full"
           style={
             {
               "--duration": "16s",
               background:
-                "radial-gradient(circle at 50% 50%, oklch(0.72 0.18 195 / 0.25) 0%, oklch(0.70 0.15 210 / 0.10) 50%, transparent 70%)",
+                "radial-gradient(circle at 50% 50%, oklch(0.60 0.26 310 / 0.25) 0%, oklch(0.62 0.24 325 / 0.10) 50%, transparent 70%)",
             } as React.CSSProperties
           }
         />
-        {/* Small bright orb center */}
+        {/* Subtle noise grain overlay */}
         <div
-          className="float-orb absolute top-[50%] left-[50%] w-[300px] h-[300px] -translate-x-1/2 -translate-y-1/2 rounded-full"
-          style={
-            {
-              "--duration": "8s",
-              background:
-                "radial-gradient(circle at 50% 50%, oklch(0.58 0.28 260 / 0.12) 0%, transparent 60%)",
-            } as React.CSSProperties
-          }
+          className="absolute inset-0 opacity-[0.025]"
+          style={{
+            backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
+            backgroundRepeat: "repeat",
+            backgroundSize: "128px",
+          }}
         />
       </div>
 
@@ -61,9 +59,9 @@ export function LoginPage() {
         <div
           className="bubble-float absolute top-[12%] left-[8%] px-4 py-2 rounded-2xl rounded-bl-sm text-xs font-medium hidden md:block"
           style={{
-            background: "oklch(0.60 0.28 280 / 0.08)",
-            border: "1px solid oklch(0.60 0.28 280 / 0.18)",
-            color: "oklch(0.65 0.15 280 / 0.5)",
+            background: "oklch(0.62 0.27 345 / 0.07)",
+            border: "1px solid oklch(0.62 0.27 345 / 0.2)",
+            color: "oklch(0.62 0.20 345 / 0.55)",
           }}
         >
           Hey, how are you? 👋
@@ -71,9 +69,9 @@ export function LoginPage() {
         <div
           className="bubble-float-2 absolute top-[18%] right-[10%] px-4 py-2 rounded-2xl rounded-br-sm text-xs font-medium hidden md:block"
           style={{
-            background: "oklch(0.68 0.25 330 / 0.08)",
-            border: "1px solid oklch(0.68 0.25 330 / 0.18)",
-            color: "oklch(0.68 0.15 330 / 0.5)",
+            background: "oklch(0.58 0.25 290 / 0.07)",
+            border: "1px solid oklch(0.58 0.25 290 / 0.2)",
+            color: "oklch(0.60 0.18 290 / 0.55)",
           }}
         >
           Just joined Linkr! 🎉
@@ -81,9 +79,9 @@ export function LoginPage() {
         <div
           className="bubble-float-3 absolute bottom-[25%] left-[10%] px-4 py-2 rounded-2xl rounded-bl-sm text-xs font-medium hidden md:block"
           style={{
-            background: "oklch(0.72 0.18 195 / 0.08)",
-            border: "1px solid oklch(0.72 0.18 195 / 0.18)",
-            color: "oklch(0.68 0.12 195 / 0.5)",
+            background: "oklch(0.60 0.26 310 / 0.07)",
+            border: "1px solid oklch(0.60 0.26 310 / 0.2)",
+            color: "oklch(0.62 0.20 310 / 0.55)",
           }}
         >
           ✓✓ Seen
@@ -93,9 +91,9 @@ export function LoginPage() {
           style={
             {
               "--duration": "7s",
-              background: "oklch(0.60 0.28 280 / 0.08)",
-              border: "1px solid oklch(0.60 0.28 280 / 0.18)",
-              color: "oklch(0.65 0.15 280 / 0.5)",
+              background: "oklch(0.62 0.27 345 / 0.07)",
+              border: "1px solid oklch(0.62 0.27 345 / 0.2)",
+              color: "oklch(0.62 0.20 345 / 0.55)",
             } as React.CSSProperties
           }
         >
@@ -110,22 +108,18 @@ export function LoginPage() {
           {/* Icon with glow */}
           <div className="relative">
             <div
-              className="absolute inset-0 rounded-2xl blur-xl opacity-70"
+              className="absolute inset-0 rounded-2xl blur-2xl opacity-60"
               style={{
                 background:
-                  "linear-gradient(135deg, oklch(0.55 0.28 290), oklch(0.60 0.25 260), oklch(0.65 0.22 220))",
+                  "linear-gradient(135deg, oklch(0.62 0.27 345), oklch(0.58 0.25 290))",
               }}
             />
-            <div
-              className="relative w-20 h-20 rounded-2xl flex items-center justify-center"
-              style={{
-                background:
-                  "linear-gradient(135deg, oklch(0.55 0.28 290), oklch(0.60 0.25 260), oklch(0.65 0.22 220))",
-                boxShadow:
-                  "0 8px 32px oklch(0.55 0.28 285 / 0.45), 0 2px 8px oklch(0.55 0.28 285 / 0.3)",
-              }}
-            >
-              <MessageCircle size={38} className="text-white" strokeWidth={2} />
+            <div className="relative w-20 h-20 rounded-2xl flex items-center justify-center gradient-btn">
+              <MessageCircle
+                size={38}
+                className="text-white relative z-10"
+                strokeWidth={2}
+              />
             </div>
           </div>
 
@@ -137,38 +131,19 @@ export function LoginPage() {
             >
               Linkr
             </h1>
-            <p
-              className="text-base mt-2 font-medium"
-              style={{ color: "oklch(0.60 0.015 270)" }}
-            >
+            <p className="text-base mt-2 font-medium text-muted-foreground">
               Private chats. Real-time. Decentralized.
             </p>
           </div>
         </div>
 
         {/* ── Login card ── */}
-        <div
-          className="w-full rounded-2xl p-6 flex flex-col gap-5"
-          style={{
-            background: "oklch(0.12 0.018 268 / 0.85)",
-            backdropFilter: "blur(20px) saturate(180%)",
-            WebkitBackdropFilter: "blur(20px) saturate(180%)",
-            border: "1px solid oklch(0.30 0.025 268 / 0.5)",
-            boxShadow:
-              "0 4px 32px oklch(0.05 0.015 270 / 0.8), inset 0 1px 0 oklch(0.35 0.03 268 / 0.3)",
-          }}
-        >
+        <div className="glass-card w-full rounded-2xl p-6 flex flex-col gap-5">
           <div className="text-center">
-            <h2
-              className="text-lg font-bold"
-              style={{ color: "oklch(0.92 0.006 270)" }}
-            >
+            <h2 className="text-lg font-bold text-foreground">
               Welcome to Linkr
             </h2>
-            <p
-              className="text-sm mt-1"
-              style={{ color: "oklch(0.55 0.012 270)" }}
-            >
+            <p className="text-sm mt-1 text-muted-foreground">
               Sign in to connect with your friends instantly
             </p>
           </div>
@@ -178,71 +153,38 @@ export function LoginPage() {
             type="button"
             onClick={login}
             disabled={isDisabled}
-            className="relative w-full h-12 rounded-xl font-semibold text-sm text-white flex items-center justify-center gap-2.5 overflow-hidden transition-all duration-300 disabled:opacity-70 disabled:cursor-not-allowed"
-            style={{
-              background:
-                "linear-gradient(135deg, oklch(0.55 0.28 290), oklch(0.60 0.25 260), oklch(0.65 0.22 220))",
-              boxShadow:
-                "0 4px 20px oklch(0.55 0.28 285 / 0.4), 0 1px 4px oklch(0.55 0.28 285 / 0.2)",
-            }}
-            onMouseEnter={(e) => {
-              if (!isDisabled) {
-                const el = e.currentTarget as HTMLElement;
-                el.style.boxShadow =
-                  "0 8px 32px oklch(0.55 0.28 285 / 0.55), 0 2px 8px oklch(0.55 0.28 285 / 0.3)";
-                el.style.transform = "translateY(-1px)";
-              }
-            }}
-            onMouseLeave={(e) => {
-              const el = e.currentTarget as HTMLElement;
-              el.style.boxShadow =
-                "0 4px 20px oklch(0.55 0.28 285 / 0.4), 0 1px 4px oklch(0.55 0.28 285 / 0.2)";
-              el.style.transform = "translateY(0)";
-            }}
+            className="gradient-btn relative w-full h-12 rounded-xl font-semibold text-sm text-white flex items-center justify-center gap-2.5 overflow-hidden disabled:opacity-70 disabled:cursor-not-allowed disabled:pointer-events-none"
           >
-            {isDisabled ? (
-              <>
-                <Loader2 className="h-5 w-5 animate-spin" />
-                <span>
-                  {isInitializing ? "Initializing..." : "Connecting..."}
-                </span>
-              </>
-            ) : (
-              <>
-                <Lock className="h-4 w-4" />
-                <span>Sign in with Internet Identity</span>
-                <Sparkles className="h-4 w-4 opacity-80" />
-              </>
-            )}
+            <span className="relative z-10 flex items-center gap-2.5">
+              {isDisabled ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span>
+                    {isInitializing ? "Initializing..." : "Connecting..."}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Lock className="h-4 w-4" />
+                  <span>Sign in with Internet Identity</span>
+                  <Sparkles className="h-4 w-4 opacity-80" />
+                </>
+              )}
+            </span>
           </button>
 
           {/* Divider */}
           <div className="flex items-center gap-3">
-            <div
-              className="flex-1 h-px"
-              style={{ background: "oklch(0.22 0.02 268)" }}
-            />
-            <span
-              className="text-xs font-medium"
-              style={{ color: "oklch(0.42 0.015 270)" }}
-            >
+            <div className="flex-1 h-px bg-border" />
+            <span className="text-xs font-medium text-muted-foreground">
               New to Linkr?
             </span>
-            <div
-              className="flex-1 h-px"
-              style={{ background: "oklch(0.22 0.02 268)" }}
-            />
+            <div className="flex-1 h-px bg-border" />
           </div>
 
-          <p
-            className="text-center text-xs leading-relaxed"
-            style={{ color: "oklch(0.48 0.012 270)" }}
-          >
+          <p className="text-center text-xs leading-relaxed text-muted-foreground">
             Tap{" "}
-            <span
-              className="font-semibold"
-              style={{ color: "oklch(0.70 0.15 280)" }}
-            >
+            <span className="font-semibold text-primary/90">
               Sign in with Internet Identity
             </span>{" "}
             above. New users can create an account in seconds — no password
@@ -252,10 +194,10 @@ export function LoginPage() {
 
         {/* ── Feature pills ── */}
         <div className="flex flex-wrap items-center justify-center gap-2">
-          <FeaturePill icon="🔒" label="No Passwords" hue={280} />
-          <FeaturePill icon="⚡" label="Real-time" hue={220} />
-          <FeaturePill icon="🌐" label="Decentralized" hue={195} />
-          <FeaturePill icon="🛡️" label="Private" hue={310} />
+          <FeaturePill icon="🔒" label="No Passwords" hue={345} />
+          <FeaturePill icon="⚡" label="Real-time" hue={310} />
+          <FeaturePill icon="🌐" label="Decentralized" hue={290} />
+          <FeaturePill icon="🛡️" label="Private" hue={325} />
         </div>
 
         {/* ── How it works ── */}
@@ -263,31 +205,30 @@ export function LoginPage() {
           <StepItem
             step="1"
             text="Authenticate with Internet Identity — secure & anonymous"
-            hue={280}
+            hue={345}
           />
           <StepItem
             step="2"
             text="Pick your username and personalize your profile"
-            hue={220}
+            hue={310}
           />
           <StepItem
             step="3"
             text="Find friends by username and chat in real-time"
-            hue={195}
+            hue={290}
           />
         </div>
       </div>
 
       {/* ── Footer ── */}
       <footer className="absolute bottom-4 left-0 right-0 text-center z-10">
-        <p className="text-xs" style={{ color: "oklch(0.32 0.012 270)" }}>
+        <p className="text-xs text-muted-foreground/60">
           © {new Date().getFullYear()}.{" "}
           <a
             href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(window.location.hostname)}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="transition-opacity hover:opacity-70"
-            style={{ color: "oklch(0.50 0.015 280)" }}
+            className="transition-opacity hover:text-muted-foreground"
           >
             Built with ❤️ using caffeine.ai
           </a>
@@ -310,9 +251,9 @@ function FeaturePill({
     <div
       className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-transform duration-200 hover:scale-105 cursor-default"
       style={{
-        background: `oklch(0.18 0.025 ${hue} / 0.7)`,
-        border: `1px solid oklch(0.32 0.04 ${hue} / 0.5)`,
-        color: `oklch(0.70 0.18 ${hue})`,
+        background: `oklch(0.20 0.03 ${hue} / 0.7)`,
+        border: `1px solid oklch(0.35 0.08 ${hue} / 0.45)`,
+        color: `oklch(0.80 0.20 ${hue})`,
       }}
     >
       <span>{icon}</span>
@@ -331,27 +272,18 @@ function StepItem({
   hue: number;
 }) {
   return (
-    <div
-      className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
-      style={{
-        background: "oklch(0.12 0.018 268 / 0.5)",
-        border: "1px solid oklch(0.20 0.02 268 / 0.5)",
-      }}
-    >
+    <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-card/60 border border-border/50">
       <div
         className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold"
         style={{
-          background: `oklch(0.22 0.04 ${hue} / 0.8)`,
-          color: `oklch(0.72 0.18 ${hue})`,
-          border: `1px solid oklch(0.35 0.06 ${hue} / 0.4)`,
+          background: `oklch(0.24 0.06 ${hue} / 0.8)`,
+          color: `oklch(0.80 0.22 ${hue})`,
+          border: `1px solid oklch(0.38 0.10 ${hue} / 0.4)`,
         }}
       >
         {step}
       </div>
-      <div
-        style={{ color: "oklch(0.52 0.012 270)" }}
-        className="text-xs leading-relaxed"
-      >
+      <div className="text-xs leading-relaxed text-muted-foreground">
         {text}
       </div>
     </div>

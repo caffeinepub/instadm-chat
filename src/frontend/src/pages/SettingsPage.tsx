@@ -97,16 +97,21 @@ export function SettingsPage() {
   return (
     <div className="min-h-dvh bg-background page-fade overflow-y-auto">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-border sticky top-0 bg-background/95 backdrop-blur-sm z-10">
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-border sticky top-0 bg-background/95 backdrop-blur-sm z-10 shadow-sm">
         <Button
           variant="ghost"
           size="icon"
-          className="rounded-xl"
+          className="rounded-xl w-9 h-9"
           onClick={() => navigate({ to: "/" })}
         >
           <ArrowLeft size={18} />
         </Button>
-        <h1 className="font-bold text-lg flex-1">Settings</h1>
+        <h1
+          className="font-bold text-lg flex-1 tracking-tight"
+          style={{ fontFamily: "'Sora', sans-serif" }}
+        >
+          Settings
+        </h1>
         <Button
           size="sm"
           className="rounded-xl gap-1.5"

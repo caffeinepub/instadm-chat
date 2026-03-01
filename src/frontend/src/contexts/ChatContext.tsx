@@ -28,6 +28,17 @@ import {
   saveToStorage,
   saveUser,
 } from "../services/chatService";
+import {
+  type FollowRequest,
+  addFollowRequest,
+  cancelFollowRequest,
+  generateFollowRequestId,
+  getFollowRequests,
+  getPendingRequestsForUser,
+  hasPendingRequest,
+  saveFollowRequests,
+  updateRequestStatus,
+} from "../services/followService";
 import type {
   AppNotification,
   AppUser,
@@ -187,6 +198,15 @@ interface ChatContextType {
   loadChatMessages: (chatId: string) => void;
   refreshChats: () => void;
   isLoadingChats: boolean;
+  // Follow system
+  followRequests: FollowRequest[];
+  sendFollowRequest: (targetUid: string, targetUsername?: string) => void;
+  acceptFollowRequest: (requestId: string) => Promise<void>;
+  declineFollowRequest: (requestId: string) => void;
+  cancelFollowRequestFn: (targetUid: string) => void;
+  followUser: (targetUid: string) => Promise<void>;
+  unfollowUser: (targetUid: string) => Promise<void>;
+  refreshFollowRequests: () => void;
 }
 
 const ChatContext = createContext<ChatContextType | null>(null);
@@ -216,6 +236,10 @@ export function ChatProvider({
   );
   const [activeChatId, setActiveChatIdState] = useState<string | null>(null);
   const [isLoadingChats, setIsLoadingChats] = useState(false);
+
+  const [followRequests, setFollowRequests] = useState<FollowRequest[]>(() =>
+    getFollowRequests(),
+  );
 
   // Polling refs
   const typingTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>(
@@ -375,21 +399,21 @@ export function ChatProvider({
     fetchChats().finally(() => setIsLoadingChats(false));
   }, [actor, isFetching, fetchChats]);
 
-  // ─── Poll chats list every 3s ─────────────────────────────────────────────
+  // ─── Poll chats list every 2s ─────────────────────────────────────────────
 
   useEffect(() => {
     if (!actor || isFetching) return;
 
     chatsPollRef.current = setInterval(() => {
       fetchChats();
-    }, 3000);
+    }, 2000);
 
     return () => {
       if (chatsPollRef.current) clearInterval(chatsPollRef.current);
     };
   }, [actor, isFetching, fetchChats]);
 
-  // ─── Poll active chat messages every 1.5s ────────────────────────────────
+  // ─── Poll active chat messages every 800ms ────────────────────────────────
 
   useEffect(() => {
     if (!actor || isFetching || !activeChatId) return;
@@ -401,21 +425,21 @@ export function ChatProvider({
     messagesPollRef.current = setInterval(() => {
       const lastTs = lastMessageTimestampRef.current[activeChatId] ?? 0n;
       fetchMessages(activeChatId, lastTs);
-    }, 1500);
+    }, 800);
 
     return () => {
       if (messagesPollRef.current) clearInterval(messagesPollRef.current);
     };
   }, [actor, isFetching, activeChatId, fetchMessages]);
 
-  // ─── Poll typing status every 1s when chat is open ───────────────────────
+  // ─── Poll typing status every 800ms when chat is open ───────────────────────
 
   useEffect(() => {
     if (!actor || isFetching || !activeChatId) return;
 
     typingPollRef.current = setInterval(() => {
       fetchTypingStatus(activeChatId);
-    }, 1000);
+    }, 800);
 
     return () => {
       if (typingPollRef.current) clearInterval(typingPollRef.current);
@@ -701,6 +725,20 @@ export function ChatProvider({
         return { chatId, isRequest: false };
       }
 
+      // Check if target user is private and current user is not a follower
+      const otherUser = users[otherUid];
+      if (otherUser?.isPrivate) {
+        const isFollower = otherUser.followers.includes(currentUid);
+        if (!isFollower) {
+          // Check if already sent a follow request
+          const alreadyRequested = hasPendingRequest(currentUid, otherUid);
+          if (!alreadyRequested) {
+            return { chatId, isRequest: true };
+          }
+          return { chatId, isRequest: true };
+        }
+      }
+
       try {
         const otherPrincipal = Principal.fromText(otherUid);
         const backendChat = await actor.getOrCreateChat(otherPrincipal);
@@ -729,7 +767,6 @@ export function ChatProvider({
         }
 
         // Check if private account → create request
-        const otherUser = users[otherUid];
         if (otherUser?.isPrivate) {
           const currentRequests = getRequests();
           const existingRequest = currentRequests.find(
@@ -957,6 +994,148 @@ export function ChatProvider({
     [actor, fetchChats],
   );
 
+  // ─── Follow system ────────────────────────────────────────────────────────
+
+  const refreshFollowRequests = useCallback(() => {
+    setFollowRequests(getFollowRequests());
+  }, []);
+
+  const sendFollowRequest = useCallback(
+    (targetUid: string, targetUsername?: string) => {
+      const req: FollowRequest = {
+        id: generateFollowRequestId(),
+        senderId: currentUid,
+        receiverId: targetUid,
+        senderUsername: targetUsername,
+        status: "pending",
+        createdAt: Date.now(),
+      };
+      addFollowRequest(req);
+      setFollowRequests(getFollowRequests());
+    },
+    [currentUid],
+  );
+
+  const acceptFollowRequest = useCallback(
+    async (requestId: string) => {
+      const req = getFollowRequests().find((r) => r.id === requestId);
+      if (!req) return;
+      updateRequestStatus(requestId, "accepted");
+      setFollowRequests(getFollowRequests());
+
+      // Update users state: add sender to our followers, we to their following
+      setUsers((prev) => {
+        const updated = { ...prev };
+        const me = updated[currentUid];
+        const sender = updated[req.senderId];
+        if (me && !me.followers.includes(req.senderId)) {
+          updated[currentUid] = {
+            ...me,
+            followers: [...me.followers, req.senderId],
+          };
+          saveUser(updated[currentUid]);
+        }
+        if (sender && !sender.following.includes(currentUid)) {
+          updated[req.senderId] = {
+            ...sender,
+            following: [...sender.following, currentUid],
+          };
+          saveUser(updated[req.senderId]);
+        }
+        return updated;
+      });
+
+      // Backend: accept follow (follow the sender so the backend records it)
+      if (actor) {
+        try {
+          await actor.followUser(Principal.fromText(req.senderId));
+        } catch {
+          // Ignore backend errors
+        }
+      }
+    },
+    [actor, currentUid],
+  );
+
+  const declineFollowRequest = useCallback((requestId: string) => {
+    updateRequestStatus(requestId, "declined");
+    setFollowRequests(getFollowRequests());
+  }, []);
+
+  const cancelFollowRequestFn = useCallback(
+    (targetUid: string) => {
+      cancelFollowRequest(currentUid, targetUid);
+      setFollowRequests(getFollowRequests());
+    },
+    [currentUid],
+  );
+
+  const followUser = useCallback(
+    async (targetUid: string) => {
+      if (!actor) return;
+      try {
+        await actor.followUser(Principal.fromText(targetUid));
+        // Update local user state
+        setUsers((prev) => {
+          const updated = { ...prev };
+          const me = updated[currentUid];
+          const target = updated[targetUid];
+          if (me && !me.following.includes(targetUid)) {
+            updated[currentUid] = {
+              ...me,
+              following: [...me.following, targetUid],
+            };
+            saveUser(updated[currentUid]);
+          }
+          if (target && !target.followers.includes(currentUid)) {
+            updated[targetUid] = {
+              ...target,
+              followers: [...target.followers, currentUid],
+            };
+            saveUser(updated[targetUid]);
+          }
+          return updated;
+        });
+      } catch {
+        // Ignore
+      }
+    },
+    [actor, currentUid],
+  );
+
+  const unfollowUser = useCallback(
+    async (targetUid: string) => {
+      if (!actor) return;
+      try {
+        await actor.unfollowUser(Principal.fromText(targetUid));
+        // Update local user state
+        setUsers((prev) => {
+          const updated = { ...prev };
+          const me = updated[currentUid];
+          const target = updated[targetUid];
+          if (me) {
+            updated[currentUid] = {
+              ...me,
+              following: me.following.filter((uid) => uid !== targetUid),
+            };
+            saveUser(updated[currentUid]);
+          }
+          if (target) {
+            updated[targetUid] = {
+              ...target,
+              followers: target.followers.filter((uid) => uid !== currentUid),
+            };
+            saveUser(updated[targetUid]);
+          }
+          return updated;
+        });
+      } catch {
+        // Ignore
+      }
+    },
+    [actor, currentUid],
+  );
+
   // ─── searchUsers ──────────────────────────────────────────────────────────
 
   const searchUsers = useCallback(
@@ -1029,6 +1208,14 @@ export function ChatProvider({
         loadChatMessages,
         refreshChats,
         isLoadingChats,
+        followRequests,
+        sendFollowRequest,
+        acceptFollowRequest,
+        declineFollowRequest,
+        cancelFollowRequestFn,
+        followUser,
+        unfollowUser,
+        refreshFollowRequests,
       }}
     >
       {children}

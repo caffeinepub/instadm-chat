@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
-import { Check, CheckCheck, FileText, Play, Volume2 } from "lucide-react";
+import { Check, CheckCheck, FileText, Pause, Play } from "lucide-react";
 import type React from "react";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { AppUser, Message } from "../../types";
 import { MessageContextMenu } from "./MessageContextMenu";
 
@@ -219,6 +219,111 @@ export function MessageBubble({
   );
 }
 
+// Pre-computed waveform heights (20 bars) to avoid array index key issues
+const WAVEFORM_HEIGHTS = Array.from({ length: 20 }, (_, i) =>
+  Math.max(4, 4 + Math.sin(i * 1.2) * 5 + Math.cos(i * 0.8) * 3),
+);
+const WAVEFORM_KEYS = WAVEFORM_HEIGHTS.map((_, i) => `wf-${i}`);
+
+function VoiceMessageContent({
+  message,
+  isSender,
+}: {
+  message: Message;
+  isSender: boolean;
+}) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(message.mediaDuration ?? 0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const togglePlay = useCallback(() => {
+    if (!message.mediaUrl) return;
+
+    if (!audioRef.current) {
+      audioRef.current = new Audio(message.mediaUrl);
+      audioRef.current.onloadedmetadata = () => {
+        setDuration(audioRef.current?.duration ?? 0);
+      };
+      audioRef.current.ontimeupdate = () => {
+        setCurrentTime(audioRef.current?.currentTime ?? 0);
+      };
+      audioRef.current.onended = () => {
+        setIsPlaying(false);
+        setCurrentTime(0);
+      };
+    }
+
+    if (isPlaying) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      audioRef.current.play().catch(() => {});
+      setIsPlaying(true);
+    }
+  }, [message.mediaUrl, isPlaying]);
+
+  const formatTime = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m}:${String(s).padStart(2, "0")}`;
+  };
+
+  const progress = duration > 0 ? currentTime / duration : 0;
+
+  return (
+    <div className="flex items-center gap-3 px-3 py-2.5 min-w-[180px]">
+      <button
+        type="button"
+        onClick={togglePlay}
+        className={cn(
+          "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-all",
+          isSender
+            ? "bg-white/25 hover:bg-white/35 text-white"
+            : "bg-primary/10 hover:bg-primary/20 text-primary",
+        )}
+      >
+        {isPlaying ? (
+          <Pause size={14} className="fill-current" />
+        ) : (
+          <Play size={14} className="fill-current ml-0.5" />
+        )}
+      </button>
+      {/* Waveform bars */}
+      <div className="flex items-center gap-0.5 flex-1">
+        {WAVEFORM_HEIGHTS.map((barHeight, i) => {
+          const barProgress = i / 20;
+          const isActive = barProgress <= progress;
+          return (
+            <div
+              key={WAVEFORM_KEYS[i]}
+              className={cn(
+                "rounded-full transition-colors w-1",
+                isActive
+                  ? isSender
+                    ? "bg-white/90"
+                    : "bg-primary"
+                  : isSender
+                    ? "bg-white/30"
+                    : "bg-muted-foreground/30",
+              )}
+              style={{ height: `${Math.max(4, barHeight)}px` }}
+            />
+          );
+        })}
+      </div>
+      <span
+        className={cn(
+          "text-xs tabular-nums flex-shrink-0",
+          isSender ? "text-white/70" : "text-muted-foreground",
+        )}
+      >
+        {isPlaying ? formatTime(currentTime) : formatTime(duration)}
+      </span>
+    </div>
+  );
+}
+
 function BubbleContent({
   message,
   isSender,
@@ -245,30 +350,26 @@ function BubbleContent({
     case "video":
       return (
         <div className="relative p-1">
-          <div className="rounded-[14px] bg-black/30 flex items-center justify-center w-48 h-32">
-            <Play size={32} className="text-white/80" />
-          </div>
-          <p className="px-2 pb-2 pt-1 text-xs opacity-70">Video</p>
+          {message.mediaUrl ? (
+            // biome-ignore lint/a11y/useMediaCaption: chat video messages don't require captions
+            <video
+              src={message.mediaUrl}
+              className="rounded-[14px] max-w-full max-h-60 object-cover"
+              controls
+            />
+          ) : (
+            <div className="rounded-[14px] bg-black/30 flex items-center justify-center w-48 h-32">
+              <Play size={32} className="text-white/80" />
+            </div>
+          )}
+          {message.text && (
+            <p className="px-2 pb-2 pt-1 text-xs opacity-70">{message.text}</p>
+          )}
         </div>
       );
 
     case "voice":
-      return (
-        <div className="flex items-center gap-3 px-4 py-3 min-w-[160px]">
-          <Volume2
-            size={18}
-            className={isSender ? "text-white/80" : "text-muted-foreground"}
-          />
-          <div className="flex-1 h-2 rounded-full bg-current opacity-30 relative overflow-hidden">
-            <div className="absolute inset-y-0 left-0 w-2/3 bg-current opacity-70 rounded-full" />
-          </div>
-          <span className="text-xs tabular-nums opacity-70">
-            {message.mediaDuration
-              ? `${Math.floor(message.mediaDuration / 60)}:${String(message.mediaDuration % 60).padStart(2, "0")}`
-              : "0:00"}
-          </span>
-        </div>
-      );
+      return <VoiceMessageContent message={message} isSender={isSender} />;
 
     case "file":
       return (

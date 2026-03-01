@@ -1,44 +1,83 @@
 # Linkr
 
 ## Current State
-- Full-stack ICP app with Internet Identity authentication
-- User profiles stored on ICP backend (createOrUpdateUserProfile, getUserProfile, searchUsersByUsernamePrefix)
-- Chat/messages stored ONLY in localStorage — this is why real-time cross-browser chat doesn't work
-- Login page exists but is plain/minimal
-- UI has dark/light mode toggle but no vibrant color palette
-- No delete account functionality
-- Typing indicators and seen receipts only work within same browser session
+
+Full-stack ICP chat app with:
+- Internet Identity authentication + username setup
+- Real-time polling (1.5s messages, 1s typing, 3s chats)
+- ICP backend stores all messages, chats, users
+- Message reactions (add/remove via backend), reply, edit, delete-for-everyone, delete-for-me, forward
+- Typing indicator (stored in backend chat document)
+- Seen indicator: per-message seenBy array, backend `markMessagesSeen`
+- Follow/unfollow user on backend
+- Block/unblock user
+- Pin/archive/mute/vanish mode per chat
+- Profile page with private account toggle, bio, avatar
+- Search users by username prefix via ICP backend
+- Sidebar with chat list, pinned chats, unread badges
+- Pink/violet-ish dark color palette already exists
 
 ## Requested Changes (Diff)
 
 ### Add
-- ICP backend: full chat and message storage (chats, messages as stable maps)
-- Backend APIs: sendMessage, getMessages, getChatMessages, getOrCreateChat, getChats, setTypingStatus, getTypingStatus, markMessagesSeen, deleteAccount
-- Real-time polling (every 1.5s) to fetch latest messages and typing status from ICP backend
-- Colorful, vibrant login page redesign with gradient backgrounds, animated elements, feature highlights
-- Delete account option in Settings page (with confirmation dialog)
-- Instagram-style seen indicator showing profile pictures of who has seen the message
-- Improved typing indicator (animated dots with username)
-- Additional features: message reactions stored on backend, online status synced to backend
+- **Follow request system**: When user A tries to follow private user B, create a pending follow request instead of immediately following. B can accept or decline. Only accepted followers can start DMs with a private account.
+- **Follow requests page/section**: UI for pending follow requests (accept/decline)
+- **Remove follow**: Already exists `unfollowUser` — expose button in profile ("Unfollow")
+- **Cancel follow request**: Before request is accepted, sender can cancel it
+- **Private DM gating**: If target user is private AND current user is not a follower, block opening chat — show "Follow request required" instead. Once request is accepted (they become a follower), DMs open normally.
+- **Media upload**: Wire blob-storage component so photos can actually be uploaded and stored on ICP, not just a local object URL. Voice messages recorded via MediaRecorder and uploaded similarly.
+- **Seen indicator fixes**: Ensure `markMessagesSeen` fires correctly and the UI reads `seenBy` properly for the last sent message.
+- **Delete for everyone**: Ensure the sender-only restriction is correct and the UI reflects deleted messages immediately for all participants via polling.
+- **Edit message**: Ensure edit works for sender and reflects for both sides on next poll.
+- **Reactions**: Ensure emoji reactions show correctly with optimistic update and backend confirmation.
+- **Pink + violet Instagram-style color theme**: Shift primary accent to vibrant pink (hue ~340) with secondary violet (hue ~280). Sender bubbles pink-gradient. Login page pink/violet orbs.
+- **Smoother real-time**: Reduce message poll to 1s (from 1.5s) and chat poll to 2s (from 3s) for snappier feel.
 
 ### Modify
-- ChatContext: replace localStorage message/chat operations with ICP backend calls + local cache for optimistic UI
-- chatService.ts: keep as local cache layer only, ICP backend is source of truth
-- LoginPage: complete visual redesign — colorful gradient hero, animated bubbles, vibrant CTA button
-- SettingsPage: add "Delete Account" section with confirmation modal
-- index.css: add vibrant color mood — electric purple-to-blue-to-cyan gradient palette for dark mode accents
-- MessageBubble: enhance seen indicator with colored dots (blue when seen, like Instagram)
-- AuthContext: add deleteAccount function
+- **Backend**: Add `FollowRequest` type and storage, `sendFollowRequest`, `acceptFollowRequest`, `declineFollowRequest`, `cancelFollowRequest`, `getPendingFollowRequests` functions. Modify `followUser` to check if target is private — if so, create a follow request instead of immediately following.
+- **ProfilePage**: Show Follow/Unfollow/Request Pending/Cancel Request button depending on relationship state. Show follower/following counts. Message button only if allowed (not private, or already a follower).
+- **ChatContext.openChat**: Check if other user is private and current user is NOT in their followers — if so, show "send follow request" flow instead of opening chat.
+- **Color palette**: Update index.css OKLCH tokens to pink/violet theme.
+- **Polling intervals**: 1s messages, 2s chat list.
 
 ### Remove
-- Periodic sync from localStorage (the 2-second interval that simulates real-time)
+- Nothing removed, only additions and fixes.
 
 ## Implementation Plan
-1. Regenerate Motoko backend with chat/message storage, typing, seen, deleteAccount
-2. Update ChatContext to call ICP backend for all chat/message operations; use 1.5s polling
-3. Update AuthContext to add deleteAccount
-4. Redesign LoginPage with vibrant colorful gradient, animated floating bubbles, bold typography
-5. Update SettingsPage with delete account option + confirmation dialog
-6. Update index.css with vibrant dark-mode color palette (purple/pink/cyan accents)
-7. Enhance MessageBubble seen indicator (blue checkmarks like Instagram, "Seen" label)
-8. Validate, build, deploy
+
+1. Update `main.mo` backend:
+   - Add `FollowRequest` type with `senderId`, `receiverId`, `status` (pending/accepted/declined), `createdAt`
+   - Add `followRequests` map storage
+   - Add `sendFollowRequest(targetId)` — if target is private, create a follow request; otherwise follow directly
+   - Add `acceptFollowRequest(requestId)` — add follower, update status
+   - Add `declineFollowRequest(requestId)` — update status
+   - Add `cancelFollowRequest(targetId)` — remove pending request
+   - Add `getPendingFollowRequests()` — returns requests where receiverId = caller
+   - Add `getSentFollowRequests()` — returns requests where senderId = caller
+   - Modify `followUser` to respect private accounts (or replace with `sendFollowRequest`)
+
+2. Update `backend.d.ts` to reflect new functions
+
+3. Frontend — ChatContext:
+   - Reduce poll intervals (messages: 1s, chats: 2s)
+   - In `openChat`, after checking private status, call `getSentFollowRequests` to determine if a request is already pending
+
+4. Frontend — ProfilePage:
+   - Add follow/unfollow/request/cancel logic
+   - Add "Follow Requests" section visible to profile owner
+   - Show correct CTA button based on relationship
+
+5. Frontend — Follow Requests UI:
+   - Small badge/section for pending follow requests
+
+6. Frontend — ChatWindow:
+   - Fix media upload to use blob-storage upload URL instead of local object URLs
+   - Wire voice recording with MediaRecorder, upload on stop
+   - Ensure seen indicator reads correctly from seenBy
+
+7. Frontend — CSS (index.css):
+   - Shift to pink/violet palette (primary hue ~340 pink, secondary hue ~290 violet)
+   - Update bubble-sender to pink gradient
+   - Update login orbs to pink/violet
+
+8. Wire blob-storage for real media upload in sendMessage flow
