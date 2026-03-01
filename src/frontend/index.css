@@ -688,6 +688,18 @@ textarea {
     radial-gradient(ellipse at 100% 100%, oklch(0.58 0.25 290 / 0.05), transparent 50%);
 }
 
+/* ─── Settings label shorthand ───────────────────────────────── */
+.settings-label {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: oklch(var(--muted-foreground));
+}
+
 /* ─── Responsive utils ────────────────────────────────────────── */
 @media (max-width: 767px) {
   .hide-mobile {

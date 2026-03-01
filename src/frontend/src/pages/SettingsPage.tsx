@@ -9,6 +9,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +21,7 @@ import {
   Archive,
   ArrowLeft,
   Bell,
+  BellOff,
   Calendar,
   ChevronRight,
   Globe,
@@ -31,10 +33,12 @@ import {
   Moon,
   Phone,
   Save,
+  Shield,
   Sun,
   Trash2,
   User,
   UserX,
+  Zap,
 } from "lucide-react";
 import type React from "react";
 import { useEffect, useState } from "react";
@@ -128,7 +132,7 @@ export function SettingsPage() {
         <Button
           variant="ghost"
           size="icon"
-          className="rounded-xl w-9 h-9"
+          className="rounded-xl w-9 h-9 flex-shrink-0"
           onClick={() => navigate({ to: "/" })}
         >
           <ArrowLeft size={18} />
@@ -146,50 +150,96 @@ export function SettingsPage() {
           disabled={isSaving}
         >
           {isSaving ? (
-            <Loader2 size={14} className="animate-spin text-white" />
+            <Loader2 size={13} className="animate-spin text-white" />
           ) : (
-            <Save size={14} className="text-white" />
+            <Save size={13} className="text-white" />
           )}
-          <span className="text-white">Save</span>
+          <span className="text-white text-xs">Save</span>
         </Button>
       </div>
 
-      <div className="max-w-lg mx-auto py-4">
+      <div className="max-w-lg mx-auto pb-10">
         {/* Profile card */}
         <button
           type="button"
           onClick={() => navigate({ to: `/profile/${currentUser?.username}` })}
-          className="flex items-center gap-4 px-5 py-4 w-full hover:bg-accent transition-colors"
+          className="flex items-center gap-4 px-5 py-4 w-full hover:bg-accent/60 transition-colors"
         >
-          <UserAvatar
-            src={currentUser?.profilePicture}
-            username={currentUser?.username ?? "?"}
-            isOnline
-            size="lg"
-          />
-          <div className="flex-1 text-left">
-            <p className="font-bold text-base">@{currentUser?.username}</p>
+          <div className="relative">
+            <UserAvatar
+              src={currentUser?.profilePicture}
+              username={currentUser?.username ?? "?"}
+              isOnline
+              size="lg"
+            />
+          </div>
+          <div className="flex-1 text-left min-w-0">
+            <p className="font-bold text-base truncate">
+              @{currentUser?.username}
+            </p>
             {currentUser?.fullName && (
-              <p className="text-sm text-foreground/70">
+              <p className="text-sm text-foreground/70 truncate">
                 {currentUser.fullName}
               </p>
             )}
-            <p className="text-sm text-muted-foreground mt-0.5 truncate">
-              {currentUser?.bio || "No bio yet"}
+            <p className="text-xs text-muted-foreground mt-0.5 truncate">
+              {currentUser?.bio || "No bio yet — tap to edit"}
             </p>
           </div>
-          <ChevronRight size={16} className="text-muted-foreground" />
+          <ChevronRight
+            size={16}
+            className="text-muted-foreground flex-shrink-0"
+          />
         </button>
+
+        {/* Stats mini bar */}
+        <div className="flex mx-5 mb-3 rounded-xl bg-muted/30 border border-border overflow-hidden">
+          <div className="flex-1 flex flex-col items-center py-3">
+            <span className="text-base font-bold tabular-nums">
+              {currentUser?.followers?.length ?? 0}
+            </span>
+            <span className="text-[10px] text-muted-foreground font-medium mt-0.5">
+              Followers
+            </span>
+          </div>
+          <div className="w-px bg-border" />
+          <div className="flex-1 flex flex-col items-center py-3">
+            <span className="text-base font-bold tabular-nums">
+              {currentUser?.following?.length ?? 0}
+            </span>
+            <span className="text-[10px] text-muted-foreground font-medium mt-0.5">
+              Following
+            </span>
+          </div>
+          <div className="w-px bg-border" />
+          <div className="flex-1 flex flex-col items-center py-3">
+            <span className="text-[10px] text-muted-foreground font-medium mt-0.5">
+              Member since
+            </span>
+            <span className="text-xs font-semibold tabular-nums">
+              {currentUser?.createdAt
+                ? new Date(currentUser.createdAt).toLocaleDateString([], {
+                    month: "short",
+                    year: "numeric",
+                  })
+                : "—"}
+            </span>
+          </div>
+        </div>
 
         <Separator />
 
         {/* Personal Info section */}
-        <SettingSection title="Personal Info">
+        <SettingSection
+          title="Personal Info"
+          icon={<User size={13} />}
+          description="Your public-facing profile information"
+        >
           <div className="px-5 pb-4 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                  <User size={11} /> Full Name
+                <Label className="settings-label">
+                  <User size={10} /> Full Name
                 </Label>
                 <Input
                   value={fullName}
@@ -199,8 +249,8 @@ export function SettingsPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                  <Phone size={11} /> Phone Number
+                <Label className="settings-label">
+                  <Phone size={10} /> Phone Number
                 </Label>
                 <Input
                   value={phoneNumber}
@@ -212,8 +262,8 @@ export function SettingsPage() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                  <Calendar size={11} /> Birth Date
+                <Label className="settings-label">
+                  <Calendar size={10} /> Birth Date
                 </Label>
                 <Input
                   type="date"
@@ -223,8 +273,8 @@ export function SettingsPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                  <Globe size={11} /> Timezone
+                <Label className="settings-label">
+                  <Globe size={10} /> Timezone
                 </Label>
                 <Input
                   value={timezone}
@@ -235,8 +285,8 @@ export function SettingsPage() {
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                <Link2 size={11} /> Website URL
+              <Label className="settings-label">
+                <Link2 size={10} /> Website URL
               </Label>
               <Input
                 value={websiteUrl}
@@ -251,7 +301,11 @@ export function SettingsPage() {
         <Separator />
 
         {/* Bio section */}
-        <SettingSection title="Bio">
+        <SettingSection
+          title="Bio"
+          icon={<MessageSquare size={13} />}
+          description="A short description about yourself"
+        >
           <div className="px-5 pb-4 space-y-2">
             <Textarea
               value={bio}
@@ -270,38 +324,50 @@ export function SettingsPage() {
         <Separator />
 
         {/* Avatar section */}
-        <SettingSection title="Profile Picture">
-          <div className="px-5 pb-4 space-y-2">
-            <div className="flex items-center gap-3 mb-3">
+        <SettingSection
+          title="Profile Picture"
+          icon={<User size={13} />}
+          description="Your profile avatar URL"
+        >
+          <div className="px-5 pb-4 space-y-3">
+            <div className="flex items-center gap-3">
               <UserAvatar
                 src={profilePicture || currentUser?.profilePicture}
                 username={currentUser?.username ?? "?"}
-                size="lg"
+                size="md"
                 showOnline={false}
               />
               <div className="flex-1 min-w-0">
-                <p className="text-xs text-muted-foreground mb-1">Preview</p>
+                <p className="text-xs text-muted-foreground mb-1.5">
+                  Paste an image URL or upload from your profile page
+                </p>
+                <Input
+                  value={profilePicture}
+                  onChange={(e) => setProfilePicture(e.target.value)}
+                  placeholder="https://..."
+                  className="rounded-xl text-sm"
+                />
               </div>
             </div>
-            <Input
-              value={profilePicture}
-              onChange={(e) => setProfilePicture(e.target.value)}
-              placeholder="https://..."
-              className="rounded-xl text-sm"
-            />
-            <p className="text-xs text-muted-foreground">
-              Paste a URL for your profile picture
-            </p>
           </div>
         </SettingSection>
 
         <Separator />
 
         {/* Appearance */}
-        <SettingSection title="Appearance">
+        <SettingSection title="Appearance" icon={<Sun size={13} />}>
           <SettingRow
-            icon={theme === "dark" ? <Moon size={16} /> : <Sun size={16} />}
+            icon={
+              theme === "dark" ? (
+                <Moon size={15} className="text-primary" />
+              ) : (
+                <Sun size={15} className="text-amber-500" />
+              )
+            }
             label="Dark mode"
+            description={
+              theme === "dark" ? "Enjoying the dark side" : "Light mode active"
+            }
             right={
               <Switch
                 checked={theme === "dark"}
@@ -314,9 +380,9 @@ export function SettingsPage() {
         <Separator />
 
         {/* Privacy */}
-        <SettingSection title="Privacy">
+        <SettingSection title="Privacy & Security" icon={<Shield size={13} />}>
           <SettingRow
-            icon={<Lock size={16} />}
+            icon={<Lock size={15} className="text-primary" />}
             label="Private account"
             description="Only approved followers can message you"
             right={
@@ -327,8 +393,15 @@ export function SettingsPage() {
             }
           />
           <SettingRow
-            icon={<Bell size={16} />}
+            icon={<Bell size={15} className="text-primary" />}
             label="Notifications"
+            description="Manage push notification preferences"
+            right={<ChevronRight size={16} className="text-muted-foreground" />}
+          />
+          <SettingRow
+            icon={<BellOff size={15} className="text-muted-foreground" />}
+            label="Muted conversations"
+            description="Chats you've silenced"
             right={<ChevronRight size={16} className="text-muted-foreground" />}
           />
         </SettingSection>
@@ -336,18 +409,30 @@ export function SettingsPage() {
         <Separator />
 
         {/* Chats */}
-        <SettingSection title="Chats">
+        <SettingSection title="Chats" icon={<MessageSquare size={13} />}>
           <SettingRow
-            icon={<Archive size={16} />}
+            icon={<Archive size={15} className="text-muted-foreground" />}
             label="Archived chats"
+            description="Conversations you've hidden"
             right={<ChevronRight size={16} className="text-muted-foreground" />}
             onClick={() => navigate({ to: "/archive" })}
           />
           <SettingRow
-            icon={<MessageSquare size={16} />}
+            icon={<MessageSquare size={15} className="text-muted-foreground" />}
             label="Message requests"
+            description="Pending incoming messages"
             right={<ChevronRight size={16} className="text-muted-foreground" />}
             onClick={() => navigate({ to: "/requests" })}
+          />
+          <SettingRow
+            icon={<Zap size={15} className="text-primary" />}
+            label="Vanish mode"
+            description="Messages disappear after being seen"
+            right={
+              <Badge variant="outline" className="text-xs rounded-full">
+                Per chat
+              </Badge>
+            }
           />
         </SettingSection>
 
@@ -355,11 +440,14 @@ export function SettingsPage() {
         {blockedUsers.length > 0 && (
           <>
             <Separator />
-            <SettingSection title="Blocked users">
+            <SettingSection
+              title={`Blocked Users (${blockedUsers.length})`}
+              icon={<UserX size={13} />}
+            >
               {blockedUsers.map((user) => (
                 <div
                   key={user.uid}
-                  className="flex items-center gap-3 px-5 py-3"
+                  className="flex items-center gap-3 px-5 py-3 hover:bg-accent/40 transition-colors"
                 >
                   <UserAvatar
                     src={user.profilePicture}
@@ -373,10 +461,10 @@ export function SettingsPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="rounded-xl text-xs gap-1"
+                    className="rounded-xl text-xs gap-1.5"
                     onClick={() => handleUnblock(user.uid)}
                   >
-                    <UserX size={12} />
+                    <UserX size={11} />
                     Unblock
                   </Button>
                 </div>
@@ -388,25 +476,31 @@ export function SettingsPage() {
         <Separator />
 
         {/* Account */}
-        <SettingSection title="Account">
+        <SettingSection title="Account" icon={<User size={13} />}>
           <button
             type="button"
             onClick={handleLogout}
-            className="flex items-center gap-3 px-5 py-3 w-full hover:bg-accent transition-colors text-destructive rounded-lg"
+            className="flex items-center gap-3 px-5 py-3 w-full hover:bg-accent/60 transition-colors text-destructive"
           >
-            <LogOut size={16} />
-            <span className="text-sm font-medium">Sign out</span>
+            <LogOut size={16} className="text-destructive" />
+            <div className="flex-1 text-left">
+              <p className="text-sm font-medium">Sign out</p>
+              <p className="text-xs text-muted-foreground">
+                @{currentUser?.username}
+              </p>
+            </div>
           </button>
         </SettingSection>
 
         <Separator />
 
         {/* Danger Zone */}
-        <SettingSection title="Danger Zone">
+        <SettingSection title="Danger Zone" icon={<Trash2 size={13} />}>
           <div className="px-5 pb-4 pt-1">
             <div className="rounded-xl border border-destructive/30 p-4 space-y-3 bg-destructive/5">
               <div>
-                <p className="text-sm font-semibold text-destructive">
+                <p className="text-sm font-semibold text-destructive flex items-center gap-1.5">
+                  <Trash2 size={13} />
                   Delete Account
                 </p>
                 <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
@@ -424,9 +518,9 @@ export function SettingsPage() {
                     disabled={isDeleting}
                   >
                     {isDeleting ? (
-                      <Loader2 size={14} className="animate-spin" />
+                      <Loader2 size={13} className="animate-spin" />
                     ) : (
-                      <Trash2 size={14} />
+                      <Trash2 size={13} />
                     )}
                     {isDeleting ? "Deleting..." : "Delete my account"}
                   </Button>
@@ -485,16 +579,32 @@ export function SettingsPage() {
 
 function SettingSection({
   title,
+  icon,
+  description,
   children,
 }: {
   title: string;
+  icon?: React.ReactNode;
+  description?: string;
   children: React.ReactNode;
 }) {
   return (
     <div>
-      <p className="text-[11px] text-muted-foreground px-5 pt-4 pb-2 font-semibold uppercase tracking-widest">
-        {title}
-      </p>
+      <div className="px-5 pt-4 pb-2 flex items-center gap-2">
+        {icon && (
+          <span className="text-muted-foreground flex-shrink-0">{icon}</span>
+        )}
+        <div className="flex-1 min-w-0">
+          <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-widest">
+            {title}
+          </p>
+          {description && (
+            <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+              {description}
+            </p>
+          )}
+        </div>
+      </div>
       {children}
     </div>
   );
@@ -514,10 +624,10 @@ function SettingRow({
   onClick?: () => void;
 }) {
   const cls =
-    "flex items-center gap-3 px-5 py-3 w-full hover:bg-accent transition-colors rounded-lg";
+    "flex items-center gap-3 px-5 py-3 w-full hover:bg-accent/60 transition-colors";
   const inner = (
     <>
-      <span className="text-muted-foreground flex-shrink-0 w-5 flex items-center justify-center">
+      <span className="flex-shrink-0 w-5 flex items-center justify-center">
         {icon}
       </span>
       <div className="flex-1 text-left min-w-0">

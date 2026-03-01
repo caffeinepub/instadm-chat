@@ -68,6 +68,7 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
     toggleMute,
     toggleVanishMode,
     refreshChats,
+    chatIdToOtherUid,
   } = useChat();
   const { currentUser } = useAuth();
   const { actor } = useActor();
@@ -88,6 +89,7 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
   // Voice recording state
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -99,22 +101,16 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
 
   const currentUid = currentUser!.uid;
 
-  // Derive otherUid from chatId (format: sorted uid1_uid2)
-  // chatId = [uid1, uid2].sort().join("_")
-  // We need to find which part is NOT the currentUid
+  // Derive otherUid from chat participants
+  // Falls back to chatIdToOtherUid map (populated by openChat) before chats state settles
   const otherUid = useMemo(() => {
     const chat = chats.find((c) => c.id === chatId);
     if (chat) {
       return chat.participants.find((p) => p !== currentUid) ?? "";
     }
-    // Fallback: chatId is uid1_uid2 (sorted). We try to determine otherUid.
-    // Since UIDs are Principal texts (contain hyphens, no underscores),
-    // the chatId join char is "_". We look for currentUid inside chatId.
-    if (chatId.includes(currentUid)) {
-      return chatId.replace(currentUid, "").replace(/^_|_$/, "");
-    }
-    return "";
-  }, [chats, chatId, currentUid]);
+    // Fallback: use the map populated synchronously by openChat
+    return chatIdToOtherUid[chatId] ?? "";
+  }, [chats, chatId, currentUid, chatIdToOtherUid]);
 
   const chat = chats.find((c) => c.id === chatId);
   const otherUser = users[otherUid];
@@ -124,49 +120,43 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
   const healingRef = useRef(false);
   useEffect(() => {
     if (chat && otherUser) return; // Already resolved
-    if (!actor || !chatId || !otherUid || healingRef.current) return;
+    if (!actor || !chatId || healingRef.current) return;
 
     healingRef.current = true;
 
     const heal = async () => {
       try {
+        // Refresh chats first — this will populate otherUser from backend
+        refreshChats();
+
+        // If we still don't have otherUid from chat participants, we can't heal
+        if (!otherUid) return;
+
         const otherPrincipal = Principal.fromText(otherUid);
 
-        // Step 1: Fetch other user's profile if missing
+        // Fetch other user's profile if missing
         if (!otherUser) {
           try {
             const profile = await actor.getUserProfile(otherPrincipal);
             if (profile) {
               const appUser = backendProfileToAppUser(profile);
               saveUser(appUser);
+              refreshChats();
             }
           } catch {
             // ignore
           }
         }
-
-        // Step 2: Ensure chat exists on backend
-        if (!chat) {
-          try {
-            await actor.getOrCreateChat(otherPrincipal);
-          } catch {
-            // ignore
-          }
-        }
-
-        // Step 3: Refresh chats + users from backend
-        refreshChats();
       } catch {
         // ignore
       } finally {
-        // Allow retry after a delay
         setTimeout(() => {
           healingRef.current = false;
-        }, 1000);
+        }, 1500);
       }
     };
 
-    const timer = setTimeout(heal, 100);
+    const timer = setTimeout(heal, 200);
     return () => clearTimeout(timer);
   }, [chat, otherUser, chatId, otherUid, actor, refreshChats]);
 
@@ -174,7 +164,17 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: chatId change should reset healing
   useEffect(() => {
     healingRef.current = false;
+    setLoadingTimedOut(false);
   }, [chatId]);
+
+  // Loading timeout: if chat/user still not resolved after 6s, show error + retry
+  useEffect(() => {
+    if (chat && otherUser) return; // Already resolved
+    const timer = setTimeout(() => {
+      setLoadingTimedOut(true);
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [chat, otherUser]);
 
   const isBlocked = currentUser?.blockedUsers?.includes(otherUid) || false;
   const isBlockedByOther =
@@ -284,11 +284,25 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
       const isImage = file.type.startsWith("image/");
       const isVideo = file.type.startsWith("video/");
 
+      // File size limit: 2MB for images/files, 5MB for videos
+      const maxSize = isVideo ? 5 * 1024 * 1024 : 2 * 1024 * 1024;
+      if (file.size > maxSize) {
+        toast.error(`File too large. Max ${isVideo ? "5MB" : "2MB"}.`);
+        e.target.value = "";
+        return;
+      }
+
       setIsUploading(true);
       setUploadProgress(0);
 
       try {
-        const localUrl = URL.createObjectURL(file);
+        // Convert to base64 data URL so it persists across sessions
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
 
         await sendMessage(
           chatId,
@@ -296,7 +310,7 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
           "",
           isImage ? "image" : isVideo ? "video" : "file",
           {
-            mediaUrl: localUrl,
+            mediaUrl: base64,
             mediaName: file.name,
           },
         );
@@ -336,10 +350,17 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
 
         setIsUploading(true);
         try {
-          const voiceUrl = URL.createObjectURL(blob);
+          // Convert to base64 data URL so it persists across page reloads
+          const base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+
           const duration = recordingDuration;
           await sendMessage(chatId, currentUid, "", "voice", {
-            mediaUrl: voiceUrl,
+            mediaUrl: base64,
             mediaDuration: duration,
           });
           toast.success("Voice message sent");
@@ -444,17 +465,57 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
             </Button>
           </div>
         )}
-        <div className="flex flex-col items-center gap-3 mt-8">
-          <div className="w-16 h-16 rounded-2xl bg-muted/60 flex items-center justify-center">
-            <Loader2 size={28} className="text-primary animate-spin" />
+        {loadingTimedOut ? (
+          <div className="flex flex-col items-center gap-4 mt-8 px-6 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-destructive/10 flex items-center justify-center">
+              <span className="text-2xl">⚠️</span>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-foreground">
+                Could not open chat
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Unable to load the conversation. Please try again.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-xl"
+                onClick={() => {
+                  setLoadingTimedOut(false);
+                  healingRef.current = false;
+                  refreshChats();
+                }}
+              >
+                Retry
+              </Button>
+              {onBack && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="rounded-xl"
+                  onClick={onBack}
+                >
+                  Go Back
+                </Button>
+              )}
+            </div>
           </div>
-          <div className="text-center">
-            <p className="text-sm font-medium">Opening chat...</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Setting up your conversation
-            </p>
+        ) : (
+          <div className="flex flex-col items-center gap-3 mt-8">
+            <div className="w-16 h-16 rounded-2xl bg-muted/60 flex items-center justify-center">
+              <Loader2 size={28} className="text-primary animate-spin" />
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-medium">Opening chat...</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Setting up your conversation
+              </p>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     );
   }

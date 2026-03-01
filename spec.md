@@ -1,83 +1,35 @@
-# Linkr
+# Linkr — Comprehensive Bug Fix & Polish
 
 ## Current State
-
-Full-stack ICP chat app with:
-- Internet Identity authentication + username setup
-- Real-time polling (1.5s messages, 1s typing, 3s chats)
-- ICP backend stores all messages, chats, users
-- Message reactions (add/remove via backend), reply, edit, delete-for-everyone, delete-for-me, forward
-- Typing indicator (stored in backend chat document)
-- Seen indicator: per-message seenBy array, backend `markMessagesSeen`
-- Follow/unfollow user on backend
-- Block/unblock user
-- Pin/archive/mute/vanish mode per chat
-- Profile page with private account toggle, bio, avatar
-- Search users by username prefix via ICP backend
-- Sidebar with chat list, pinned chats, unread badges
-- Pink/violet-ish dark color palette already exists
+A real-time ICP-based chat app with DMs, group chats, reactions, voice/media, follow system, and notifications. Multiple features are broken or not working reliably.
 
 ## Requested Changes (Diff)
 
 ### Add
-- **Follow request system**: When user A tries to follow private user B, create a pending follow request instead of immediately following. B can accept or decline. Only accepted followers can start DMs with a private account.
-- **Follow requests page/section**: UI for pending follow requests (accept/decline)
-- **Remove follow**: Already exists `unfollowUser` — expose button in profile ("Unfollow")
-- **Cancel follow request**: Before request is accepted, sender can cancel it
-- **Private DM gating**: If target user is private AND current user is not a follower, block opening chat — show "Follow request required" instead. Once request is accepted (they become a follower), DMs open normally.
-- **Media upload**: Wire blob-storage component so photos can actually be uploaded and stored on ICP, not just a local object URL. Voice messages recorded via MediaRecorder and uploaded similarly.
-- **Seen indicator fixes**: Ensure `markMessagesSeen` fires correctly and the UI reads `seenBy` properly for the last sent message.
-- **Delete for everyone**: Ensure the sender-only restriction is correct and the UI reflects deleted messages immediately for all participants via polling.
-- **Edit message**: Ensure edit works for sender and reflects for both sides on next poll.
-- **Reactions**: Ensure emoji reactions show correctly with optimistic update and backend confirmation.
-- **Pink + violet Instagram-style color theme**: Shift primary accent to vibrant pink (hue ~340) with secondary violet (hue ~280). Sender bubbles pink-gradient. Login page pink/violet orbs.
-- **Smoother real-time**: Reduce message poll to 1s (from 1.5s) and chat poll to 2s (from 3s) for snappier feel.
+- Message ID tracking map (timestamp → messageId) so edit/delete always find the correct backend ID
+- Base64 encoding for voice messages and images to persist across browser sessions
+- `searchUsersByUsername` call with proper multi-case search (lowercase, uppercase, original, prefix)
+- Proper `otherUid` storage in a separate ref map when `openChat` is called so ChatWindow always resolves
 
 ### Modify
-- **Backend**: Add `FollowRequest` type and storage, `sendFollowRequest`, `acceptFollowRequest`, `declineFollowRequest`, `cancelFollowRequest`, `getPendingFollowRequests` functions. Modify `followUser` to check if target is private — if so, create a follow request instead of immediately following.
-- **ProfilePage**: Show Follow/Unfollow/Request Pending/Cancel Request button depending on relationship state. Show follower/following counts. Message button only if allowed (not private, or already a follower).
-- **ChatContext.openChat**: Check if other user is private and current user is NOT in their followers — if so, show "send follow request" flow instead of opening chat.
-- **Color palette**: Update index.css OKLCH tokens to pink/violet theme.
-- **Polling intervals**: 1s messages, 2s chat list.
+- **User search** — Sidebar's `searchUsers` function must call backend `searchUsersByUsername` + `searchUsersByUsernamePrefix` in parallel, deduplicate, filter self, return sorted results. Current implementation only calls local localStorage fallback.
+- **ChatWindow `otherUid` derivation** — Currently tries to derive from `chats` state array which may not have the chat yet. Fix: store `chatId → otherUid` in a dedicated ref/context when `openChat` is called.
+- **Message ID alignment** — Backend generates `chatId_nanosecondTimestamp`. Frontend stores this in `backendMsgToFrontend`. But when calling `editMessage`/`deleteMessageForEveryone`, frontend passes `msg.id` which is correct, BUT the context's `messages` state may have stale optimistic IDs. Fix: after `sendMessage` resolves, ensure real message ID replaces optimistic ID and is stored in a `messageIdMap` ref keyed by optimistic ID.
+- **Reactions toggle** — Backend `addReaction` always appends without checking existing. Frontend must check if user already reacted to the same emoji using the current backend state before calling add vs remove.
+- **Seen indicator** — Full message refresh every 2s correctly merges seenBy. But `markSeen` optimistic update needs to also call backend `markMessagesSeen` and the polling must pick up the updated seenBy from full refresh. Ensure `fetchMessages(chatId, 0n)` runs after `markSeen` completes.
+- **Media/Voice messages** — `URL.createObjectURL` creates blob URLs that die on page refresh. Fix: for voice, convert Blob to base64 data URL before storing. For images < 2MB, same approach. For larger images, show a placeholder with a warning that media won't persist.
+- **ChatContext `searchUsers`** — Currently calls local `localSearchUsers` fallback then backend. Reverse this: always hit backend first, fallback to local only if actor unavailable.
+- **Professional UI** — Fix MessageBubble seen indicator positioning, improve SettingsPage layout, ProfilePage stats, and add better empty states with proper responsive styling.
 
 ### Remove
-- Nothing removed, only additions and fixes.
+- `flushSync` usage (already removed in v11 but verify it's completely gone)
+- Stale localStorage-only search path as primary search method
 
 ## Implementation Plan
-
-1. Update `main.mo` backend:
-   - Add `FollowRequest` type with `senderId`, `receiverId`, `status` (pending/accepted/declined), `createdAt`
-   - Add `followRequests` map storage
-   - Add `sendFollowRequest(targetId)` — if target is private, create a follow request; otherwise follow directly
-   - Add `acceptFollowRequest(requestId)` — add follower, update status
-   - Add `declineFollowRequest(requestId)` — update status
-   - Add `cancelFollowRequest(targetId)` — remove pending request
-   - Add `getPendingFollowRequests()` — returns requests where receiverId = caller
-   - Add `getSentFollowRequests()` — returns requests where senderId = caller
-   - Modify `followUser` to respect private accounts (or replace with `sendFollowRequest`)
-
-2. Update `backend.d.ts` to reflect new functions
-
-3. Frontend — ChatContext:
-   - Reduce poll intervals (messages: 1s, chats: 2s)
-   - In `openChat`, after checking private status, call `getSentFollowRequests` to determine if a request is already pending
-
-4. Frontend — ProfilePage:
-   - Add follow/unfollow/request/cancel logic
-   - Add "Follow Requests" section visible to profile owner
-   - Show correct CTA button based on relationship
-
-5. Frontend — Follow Requests UI:
-   - Small badge/section for pending follow requests
-
-6. Frontend — ChatWindow:
-   - Fix media upload to use blob-storage upload URL instead of local object URLs
-   - Wire voice recording with MediaRecorder, upload on stop
-   - Ensure seen indicator reads correctly from seenBy
-
-7. Frontend — CSS (index.css):
-   - Shift to pink/violet palette (primary hue ~340 pink, secondary hue ~290 violet)
-   - Update bubble-sender to pink gradient
-   - Update login orbs to pink/violet
-
-8. Wire blob-storage for real media upload in sendMessage flow
+1. Fix `ChatContext.searchUsers` to always call backend `searchUsersByUsername` + prefix search, deduplicate
+2. Add `chatIdToOtherUid` map in ChatContext, populated in `openChat`, read in ChatWindow
+3. Ensure message IDs sent to `editMessage`/`deleteMessageForEveryone` are always the real backend IDs (not optimistic)
+4. Fix `reactToMessage` to read current reactions from backend state before toggling
+5. Add `fetchMessages(chatId, 0n)` call shortly after `markSeen` to confirm seenBy update
+6. Convert voice Blob to base64 data URL; images < 1MB to base64 too
+7. Polish: MessageBubble seen indicator, Settings, Profile, responsive layout

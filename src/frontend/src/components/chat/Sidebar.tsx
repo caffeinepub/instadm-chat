@@ -115,6 +115,10 @@ export function Sidebar({ onChatSelect, onGroupSelect }: SidebarProps) {
 
   const handleUserClick = useCallback(
     async (user: AppUser) => {
+      // Clear search immediately for responsive feel
+      setSearch("");
+      setUserResults([]);
+
       // Check if private account and not a follower
       if (user.isPrivate && !user.followers.includes(currentUid)) {
         const alreadyRequested = hasPendingRequest(currentUid, user.uid);
@@ -126,8 +130,6 @@ export function Sidebar({ onChatSelect, onGroupSelect }: SidebarProps) {
             `Follow request sent to @${user.username}. They must accept before you can chat.`,
           );
         }
-        setSearch("");
-        setUserResults([]);
         return;
       }
 
@@ -137,18 +139,16 @@ export function Sidebar({ onChatSelect, onGroupSelect }: SidebarProps) {
           user.uid,
           user,
         );
-        setSearch("");
-        setUserResults([]);
         if (!isRequest) {
-          handleSelectChat(chatId);
+          onChatSelect?.(chatId);
         } else {
           toast.info("Message request sent");
         }
       } catch {
-        // Silently fail — user can try again
+        toast.error("Could not open chat. Please try again.");
       }
     },
-    [openChat, currentUid, handleSelectChat, sendFollowRequest],
+    [openChat, currentUid, onChatSelect, sendFollowRequest],
   );
 
   // Sort chats: pinned first, then by lastUpdated

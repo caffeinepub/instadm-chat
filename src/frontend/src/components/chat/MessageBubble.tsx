@@ -206,6 +206,7 @@ export function MessageBubble({
           x={contextMenu.x}
           y={contextMenu.y}
           isSender={isSender}
+          isOptimistic={message.id.startsWith("optimistic_")}
           onReact={onReact}
           onReply={onReply}
           onEdit={onEdit}

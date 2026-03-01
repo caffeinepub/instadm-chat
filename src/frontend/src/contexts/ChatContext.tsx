@@ -8,7 +8,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { flushSync } from "react-dom";
 import { toast } from "sonner";
 import type {
   Chat as BackendChat,
@@ -115,12 +114,17 @@ function backendMsgToFrontend(msg: BackendMessage, chatId: string): Message {
     messageType: msg.messageType as MessageType,
     createdAt: Number(msg.createdAt / BigInt(1_000_000)),
     seenBy: msg.seenBy.map((p) => p.toString()),
-    reactions: Object.fromEntries(
-      msg.reactions.map(([emoji, uids]) => [
-        emoji,
-        uids.map((p) => p.toString()),
-      ]),
-    ),
+    reactions: (() => {
+      const merged: Record<string, string[]> = {};
+      for (const [emoji, uids] of msg.reactions) {
+        if (!merged[emoji]) merged[emoji] = [];
+        for (const u of uids) {
+          const s = u.toString();
+          if (!merged[emoji].includes(s)) merged[emoji].push(s);
+        }
+      }
+      return merged;
+    })(),
     edited: msg.edited,
     editedAt: msg.editedAt
       ? Number(msg.editedAt / BigInt(1_000_000))
@@ -177,6 +181,8 @@ interface ChatContextType {
   notifications: AppNotification[];
   activeChatId: string | null;
   setActiveChatId: (id: string | null) => void;
+  /** Map from chatId → otherUid, populated immediately by openChat so ChatWindow doesn't have to wait for chats state */
+  chatIdToOtherUid: Record<string, string>;
   // Group chats
   groupChats: GroupChat[];
   groupMessages: Record<string, Message[]>;
@@ -297,6 +303,11 @@ export function ChatProvider({
     getFollowRequests(),
   );
 
+  // chatId → otherUid map: populated immediately by openChat so ChatWindow doesn't stall
+  const [chatIdToOtherUid, setChatIdToOtherUid] = useState<
+    Record<string, string>
+  >({});
+
   // Polling refs
   const typingTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>(
     {},
@@ -391,8 +402,29 @@ export function ChatProvider({
         }));
 
         if (afterTimestamp === 0n) {
-          // Full refresh
-          setMessages((prev) => ({ ...prev, [chatId]: withDeletedFor }));
+          // Full refresh — preserve locally deleted messages and detect backend-deleted ones
+          setMessages((prev) => {
+            const existing = prev[chatId] ?? [];
+            const newIds = new Set(withDeletedFor.map((m) => m.id));
+            // Messages that existed before but are gone from backend = deleted for everyone
+            const ghostDeleted = existing
+              .filter(
+                (m) =>
+                  !m.deletedForEveryone &&
+                  !newIds.has(m.id) &&
+                  !m.id.startsWith("optimistic_"),
+              )
+              .map((m) => ({ ...m, deletedForEveryone: true, text: "" }));
+            // Restore deletedFor flags from previous state (client-side only)
+            const merged = withDeletedFor.map((m) => {
+              const prevMsg = existing.find((e) => e.id === m.id);
+              return prevMsg ? { ...m, deletedFor: prevMsg.deletedFor } : m;
+            });
+            const combined = [...merged, ...ghostDeleted].sort(
+              (a, b) => a.createdAt - b.createdAt,
+            );
+            return { ...prev, [chatId]: combined };
+          });
         } else {
           // Incremental: merge new messages AND update existing ones (seenBy, text, edited, deletedForEveryone)
           // Also fire browser notifications for new messages from others
@@ -581,10 +613,10 @@ export function ChatProvider({
       fetchMessages(activeChatId, lastTs);
     }, 500);
 
-    // Full refresh every 3 seconds to catch any missed updates (seen, edits, reactions)
+    // Full refresh every 2 seconds to catch any missed updates (seen, edits, reactions)
     fullRefreshIntervalRef.current = setInterval(() => {
       fetchMessages(activeChatId, 0n);
-    }, 3000);
+    }, 2000);
 
     return () => {
       if (messagesPollRef.current) clearInterval(messagesPollRef.current);
@@ -819,15 +851,24 @@ export function ChatProvider({
     async (chatId: string, messageId: string, emoji: string, uid: string) => {
       if (!actor) return;
 
-      // Optimistic toggle
+      // Read the CURRENT state BEFORE optimistic update to determine add vs remove
+      // Use functional update so we can capture the before-state reliably
+      let hadReactionBefore = false;
       setMessages((prev) => {
         const msgs = prev[chatId] ?? [];
+        const msg = msgs.find((m) => m.id === messageId);
+        if (!msg) return prev;
+
+        // Capture the current reaction state (before toggle)
+        hadReactionBefore = (msg.reactions[emoji] ?? []).includes(uid);
+
+        // Apply optimistic toggle
         return {
           ...prev,
           [chatId]: msgs.map((m) => {
             if (m.id !== messageId) return m;
             const current = m.reactions[emoji] ?? [];
-            const updated = current.includes(uid)
+            const updated = hadReactionBefore
               ? current.filter((u) => u !== uid)
               : [...current, uid];
             const newReactions = { ...m.reactions, [emoji]: updated };
@@ -837,23 +878,23 @@ export function ChatProvider({
         };
       });
 
-      const msgs = messages[chatId] ?? [];
-      const msg = msgs.find((m) => m.id === messageId);
-      if (!msg) return;
+      // Wait for state update to complete, then send backend call
+      await new Promise((r) => setTimeout(r, 0));
 
       try {
-        const hasReacted = (msg.reactions[emoji] ?? []).includes(uid);
-        if (hasReacted) {
+        if (hadReactionBefore) {
           await actor.removeReaction(chatId, messageId, emoji);
         } else {
           await actor.addReaction(chatId, messageId, emoji);
         }
+        // Always refresh after backend call to get canonical reaction state
+        setTimeout(() => fetchMessages(chatId, 0n), 300);
       } catch {
         // Revert
         fetchMessages(chatId, 0n);
       }
     },
-    [actor, messages, fetchMessages],
+    [actor, fetchMessages],
   );
 
   // ─── forwardMessage ───────────────────────────────────────────────────────
@@ -884,12 +925,6 @@ export function ChatProvider({
     ): Promise<{ chatId: string; isRequest: boolean }> => {
       const chatId = generateChatId(currentUid, otherUid);
 
-      if (!actor) {
-        // Offline fallback — just set active
-        setActiveChatId(chatId);
-        return { chatId, isRequest: false };
-      }
-
       // Use knownUser if provided (e.g. from search results), else look up in state
       const otherUser = knownUser ?? users[otherUid];
 
@@ -901,56 +936,68 @@ export function ChatProvider({
         }
       }
 
+      if (!actor) {
+        // Offline fallback — just set active
+        if (otherUser) {
+          setUsers((prev) => ({ ...prev, [otherUid]: otherUser }));
+          saveUser(otherUser);
+        }
+        setActiveChatId(chatId);
+        return { chatId, isRequest: false };
+      }
+
       try {
         const otherPrincipal = Principal.fromText(otherUid);
 
-        // Fetch other user profile if not already resolved
-        let resolvedUser: AppUser | undefined = otherUser;
-        if (!resolvedUser) {
-          try {
-            const profile = await actor.getUserProfile(otherPrincipal);
-            if (profile) {
-              resolvedUser = backendProfileToAppUser(profile);
-              saveUser(resolvedUser);
-            }
-          } catch {
-            // ignore — continue anyway
+        // Step 1: Fetch other user profile — always fetch fresh from backend
+        let resolvedUser: AppUser | undefined = knownUser;
+        try {
+          const profile = await actor.getUserProfile(otherPrincipal);
+          if (profile) {
+            resolvedUser = backendProfileToAppUser(profile);
+            saveUser(resolvedUser);
           }
-        } else {
-          // Ensure it's saved to localStorage for cache
-          saveUser(resolvedUser);
+        } catch {
+          // Use cached user if fetch fails
+          if (!resolvedUser) resolvedUser = users[otherUid];
         }
 
+        // Step 2: Create/get chat on backend
         const backendChat = await actor.getOrCreateChat(otherPrincipal);
-
-        // Convert and add to state — BEFORE setting activeChatId
         const frontendChat = backendChatToFrontend(backendChat, chatId);
 
-        // Use flushSync to guarantee state updates are committed synchronously
-        // before ChatWindow renders and tries to look up chat/user
-        flushSync(() => {
-          if (resolvedUser) {
-            setUsers((prev) => ({ ...prev, [otherUid]: resolvedUser! }));
+        // Step 3: Update state — user first, then chat, then set active
+        // Use separate setState calls (no flushSync) to avoid React 18 batching issues
+        if (resolvedUser) {
+          setUsers((prev) => ({ ...prev, [otherUid]: resolvedUser! }));
+        }
+        setChats((prev) => {
+          const exists = prev.some((c) => c.id === chatId);
+          if (exists) {
+            return prev.map((c) =>
+              c.id === chatId ? { ...c, ...frontendChat } : c,
+            );
           }
-          setChats((prev) => {
-            const exists = prev.some((c) => c.id === chatId);
-            if (exists) {
-              return prev.map((c) =>
-                c.id === chatId ? { ...c, ...frontendChat } : c,
-              );
-            }
-            return [...prev, frontendChat];
-          });
-          setActiveGroupChatIdState(null);
+          return [...prev, frontendChat];
         });
+        // Populate the chatId → otherUid map immediately so ChatWindow doesn't stall
+        setChatIdToOtherUid((prev) => ({ ...prev, [chatId]: otherUid }));
+        setActiveGroupChatIdState(null);
+        activeChatIdRef.current = chatId;
+        setActiveChatIdState(chatId);
+        lastMessageTimestampRef.current[chatId] = 0n;
+        // Fetch messages immediately
+        setTimeout(() => fetchMessages(chatId, 0n), 50);
 
-        // Now set active chat — both chat and user are guaranteed in state
-        setActiveChatId(chatId);
         return { chatId, isRequest: false };
       } catch {
         // Fallback: just set active chat if it already exists
         const existingChat = chats.find((c) => c.id === chatId);
         if (existingChat) {
+          if (otherUser) {
+            setUsers((prev) => ({ ...prev, [otherUid]: otherUser }));
+          }
+          setChatIdToOtherUid((prev) => ({ ...prev, [chatId]: otherUid }));
           setActiveChatId(chatId);
           return { chatId, isRequest: false };
         }
@@ -984,7 +1031,7 @@ export function ChatProvider({
         return { chatId, isRequest: false };
       }
     },
-    [actor, chats, users, setActiveChatId],
+    [actor, chats, users, setActiveChatId, fetchMessages],
   );
 
   // ─── markSeen ────────────────────────────────────────────────────────────
@@ -1003,11 +1050,13 @@ export function ChatProvider({
       if (!actor) return;
       try {
         await actor.markMessagesSeen(chatId);
+        // Immediately refresh to propagate seenBy to other participants
+        setTimeout(() => fetchMessages(chatId, 0n), 200);
       } catch {
         // Ignore
       }
     },
-    [actor],
+    [actor, fetchMessages],
   );
 
   // ─── setTyping ────────────────────────────────────────────────────────────
@@ -1232,7 +1281,24 @@ export function ChatProvider({
         );
 
         if (afterTimestamp === 0n) {
-          setGroupMessages((prev) => ({ ...prev, [groupId]: converted }));
+          // Full refresh — preserve locally deleted messages and detect backend-deleted ones
+          setGroupMessages((prev) => {
+            const existing = prev[groupId] ?? [];
+            const newIds = new Set(converted.map((m) => m.id));
+            // Messages that existed before but are gone from backend = deleted for everyone
+            const ghostDeleted = existing
+              .filter(
+                (m) =>
+                  !m.deletedForEveryone &&
+                  !newIds.has(m.id) &&
+                  !m.id.startsWith("optimistic_"),
+              )
+              .map((m) => ({ ...m, deletedForEveryone: true, text: "" }));
+            const combined = [...converted, ...ghostDeleted].sort(
+              (a, b) => a.createdAt - b.createdAt,
+            );
+            return { ...prev, [groupId]: combined };
+          });
         } else {
           const currentUsers = getUsers();
 
@@ -1843,6 +1909,7 @@ export function ChatProvider({
         notifications,
         activeChatId,
         setActiveChatId,
+        chatIdToOtherUid,
         // Group chats
         groupChats,
         groupMessages,

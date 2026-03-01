@@ -9,6 +9,7 @@ interface MessageContextMenuProps {
   x: number;
   y: number;
   isSender: boolean;
+  isOptimistic?: boolean;
   onReact: (emoji: string) => void;
   onReply: () => void;
   onEdit?: () => void;
@@ -22,6 +23,7 @@ export function MessageContextMenu({
   x,
   y,
   isSender,
+  isOptimistic = false,
   onReact,
   onReply,
   onEdit,
@@ -96,7 +98,7 @@ export function MessageContextMenu({
             onClose();
           }}
         />
-        {isSender && onEdit && (
+        {isSender && onEdit && !isOptimistic && (
           <MenuAction
             icon={<Edit2 size={14} />}
             label="Edit"
@@ -106,28 +108,32 @@ export function MessageContextMenu({
             }}
           />
         )}
-        <MenuAction
-          icon={<Share2 size={14} />}
-          label="Forward"
-          onClick={() => {
-            onForward();
-            onClose();
-          }}
-        />
+        {!isOptimistic && (
+          <MenuAction
+            icon={<Share2 size={14} />}
+            label="Forward"
+            onClick={() => {
+              onForward();
+              onClose();
+            }}
+          />
+        )}
         <div
           className="mx-3 my-1 h-px"
           style={{ background: "oklch(var(--border) / 0.5)" }}
         />
-        <MenuAction
-          icon={<Trash2 size={14} />}
-          label="Delete for me"
-          onClick={() => {
-            onDeleteForMe();
-            onClose();
-          }}
-          danger
-        />
-        {isSender && onDeleteForEveryone && (
+        {!isOptimistic && (
+          <MenuAction
+            icon={<Trash2 size={14} />}
+            label="Delete for me"
+            onClick={() => {
+              onDeleteForMe();
+              onClose();
+            }}
+            danger
+          />
+        )}
+        {isSender && onDeleteForEveryone && !isOptimistic && (
           <MenuAction
             icon={<X size={14} />}
             label="Delete for everyone"
@@ -137,6 +143,11 @@ export function MessageContextMenu({
             }}
             danger
           />
+        )}
+        {isOptimistic && (
+          <div className="px-4 py-2.5 text-xs text-muted-foreground italic">
+            Sending...
+          </div>
         )}
       </div>
     </div>

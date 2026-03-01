@@ -3,21 +3,25 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import {
   ArrowLeft,
   Calendar,
+  Camera,
   Check,
   Clock,
   Edit2,
+  ExternalLink,
   Globe,
   Link2,
   Loader2,
   Lock,
   MessageCircle,
   Phone,
+  Star,
   User,
   UserCheck,
   UserMinus,
@@ -88,8 +92,24 @@ export function ProfilePage() {
 
   if (!targetUser) {
     return (
-      <div className="min-h-dvh flex items-center justify-center page-fade bg-background">
-        <p className="text-muted-foreground text-sm">User not found</p>
+      <div className="min-h-dvh flex flex-col items-center justify-center page-fade bg-background gap-4">
+        <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center">
+          <User size={28} className="text-muted-foreground" />
+        </div>
+        <div className="text-center">
+          <p className="font-semibold text-foreground">User not found</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            This profile doesn't exist or hasn't been loaded yet.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          className="rounded-xl"
+          onClick={() => navigate({ to: "/" })}
+        >
+          <ArrowLeft size={14} className="mr-2" />
+          Go back
+        </Button>
       </div>
     );
   }
@@ -191,29 +211,43 @@ export function ProfilePage() {
       })
     : null;
 
+  const birthDateFormatted = targetUser.birthDate
+    ? (() => {
+        try {
+          return new Date(targetUser.birthDate).toLocaleDateString([], {
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+          });
+        } catch {
+          return targetUser.birthDate;
+        }
+      })()
+    : null;
+
   return (
     <div className="min-h-dvh bg-background page-fade overflow-y-auto">
-      {/* Header */}
+      {/* Sticky header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-border sticky top-0 bg-background/95 backdrop-blur-sm z-10 shadow-sm">
         <Button
           variant="ghost"
           size="icon"
-          className="rounded-xl w-9 h-9"
+          className="rounded-xl w-9 h-9 flex-shrink-0"
           onClick={() => navigate({ to: "/" })}
         >
           <ArrowLeft size={18} />
         </Button>
         <h1
-          className="font-bold text-lg flex-1 tracking-tight"
+          className="font-bold text-lg flex-1 tracking-tight truncate"
           style={{ fontFamily: "'Sora', sans-serif" }}
         >
           @{targetUser.username}
         </h1>
         {isOwnProfile && !editing && (
           <Button
-            variant="ghost"
-            size="icon"
-            className="rounded-xl"
+            variant="outline"
+            size="sm"
+            className="rounded-xl gap-1.5 text-xs"
             onClick={() => {
               setForm({
                 bio: currentUser?.bio ?? "",
@@ -228,50 +262,70 @@ export function ProfilePage() {
               setEditing(true);
             }}
           >
-            <Edit2 size={16} />
+            <Edit2 size={12} />
+            Edit Profile
           </Button>
         )}
         {editing && (
-          <div className="flex gap-1">
+          <div className="flex gap-1.5">
             <Button
               variant="ghost"
               size="icon"
-              className="rounded-xl"
+              className="rounded-xl w-8 h-8 text-muted-foreground"
               onClick={() => setEditing(false)}
             >
-              <X size={16} />
+              <X size={15} />
             </Button>
             <Button
-              variant="ghost"
-              size="icon"
-              className="rounded-xl"
+              size="sm"
+              className="rounded-xl gradient-btn gap-1.5"
               onClick={handleSave}
               disabled={saving}
             >
               {saving ? (
-                <Loader2 size={16} className="animate-spin" />
+                <Loader2 size={13} className="animate-spin text-white" />
               ) : (
-                <Check size={16} />
+                <Check size={13} className="text-white" />
               )}
+              <span className="text-white text-xs">Save</span>
             </Button>
           </div>
         )}
       </div>
 
-      <div className="max-w-lg mx-auto px-4 py-8 space-y-6">
-        {/* Avatar + Basic info */}
-        <div className="flex flex-col items-center gap-5">
+      {/* Cover banner */}
+      <div
+        className="h-36 sm:h-44 relative overflow-hidden"
+        style={{
+          background:
+            "linear-gradient(135deg, oklch(0.62 0.27 345 / 0.8), oklch(0.60 0.26 320 / 0.7), oklch(0.58 0.25 290 / 0.8))",
+        }}
+      >
+        {/* Decorative pattern */}
+        <div
+          className="absolute inset-0 opacity-20"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 20%, white 1px, transparent 1px)",
+            backgroundSize: "40px 40px",
+          }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent to-background/40" />
+      </div>
+
+      {/* Avatar overlapping cover */}
+      <div className="max-w-xl mx-auto px-4 sm:px-6">
+        <div className="flex items-end justify-between -mt-12 sm:-mt-14 mb-4">
           <div className="relative">
             <div
-              className="rounded-full p-0.5"
+              className="rounded-full p-0.5 shadow-lg"
               style={{
                 background: targetUser.onlineStatus
                   ? "linear-gradient(135deg, oklch(0.62 0.27 345), oklch(0.58 0.25 290))"
-                  : "transparent",
-                padding: targetUser.onlineStatus ? "2px" : "0",
+                  : "oklch(var(--border))",
               }}
             >
-              <div className="rounded-full overflow-hidden bg-background">
+              <div className="rounded-full overflow-hidden bg-background w-20 h-20 sm:w-24 sm:h-24">
                 <UserAvatar
                   src={targetUser.profilePicture}
                   username={targetUser.username}
@@ -285,9 +339,9 @@ export function ProfilePage() {
                 <button
                   type="button"
                   onClick={() => fileRef.current?.click()}
-                  className="absolute inset-0 rounded-full bg-black/30 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity"
+                  className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-card border border-border flex items-center justify-center shadow-sm hover:bg-accent transition-colors"
                 >
-                  <Edit2 size={18} className="text-white" />
+                  <Camera size={12} className="text-foreground" />
                 </button>
                 <input
                   ref={fileRef}
@@ -300,288 +354,329 @@ export function ProfilePage() {
             )}
           </div>
 
-          {!editing ? (
-            <>
-              <div className="text-center space-y-1">
-                {targetUser.fullName && (
-                  <p className="text-base font-semibold text-foreground">
-                    {targetUser.fullName}
-                  </p>
-                )}
-                <h2 className="text-lg font-bold tracking-tight gradient-text">
-                  @{targetUser.username}
-                </h2>
-                {targetUser.bio && (
-                  <p className="text-sm text-muted-foreground mt-1.5 max-w-xs leading-relaxed text-center">
-                    {targetUser.bio}
-                  </p>
-                )}
-                <div className="flex items-center gap-3 justify-center flex-wrap mt-2">
-                  {targetUser.isPrivate && (
-                    <Badge
-                      variant="outline"
-                      className="gap-1 rounded-full text-xs"
-                    >
-                      <Lock size={10} />
-                      Private
-                    </Badge>
-                  )}
-                  {targetUser.onlineStatus && (
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <span className="w-2 h-2 rounded-full bg-online-dot inline-block" />
-                      Active now
-                    </div>
-                  )}
-                  {memberSince && (
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Calendar size={10} />
-                      Joined {memberSince}
-                    </div>
-                  )}
-                </div>
-                {targetUser.websiteUrl && (
-                  <a
-                    href={
-                      targetUser.websiteUrl.startsWith("http")
-                        ? targetUser.websiteUrl
-                        : `https://${targetUser.websiteUrl}`
-                    }
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 text-xs text-primary hover:underline justify-center mt-1"
+          {/* Action buttons (non-editing, non-own profile) */}
+          {!isOwnProfile && !editing && (
+            <div className="flex gap-2 flex-wrap mb-1">
+              {isFollowing ? (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleUnfollow}
+                    disabled={followLoading}
+                    className="rounded-xl gap-1.5 h-9 px-4 text-sm"
                   >
-                    <Link2 size={11} />
-                    {targetUser.websiteUrl}
-                  </a>
-                )}
-              </div>
-
-              {/* Stats */}
-              <div className="flex gap-8 text-center">
-                <div className="flex flex-col items-center">
-                  <p className="font-bold text-xl leading-tight">
-                    {targetUser.followers.length}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Followers
-                  </p>
-                </div>
-                <div className="w-px bg-border" />
-                <div className="flex flex-col items-center">
-                  <p className="font-bold text-xl leading-tight">
-                    {targetUser.following.length}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {followLoading ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                      <UserCheck size={13} />
+                    )}
                     Following
-                  </p>
-                </div>
-              </div>
-
-              {/* Actions for other profiles */}
-              {!isOwnProfile && (
-                <div className="flex gap-2 flex-wrap justify-center">
-                  {isFollowing ? (
-                    <>
-                      <Button
-                        variant="outline"
-                        onClick={handleUnfollow}
-                        disabled={followLoading}
-                        className="rounded-xl gap-2 h-9 px-5 text-sm border-border"
-                      >
-                        {followLoading ? (
-                          <Loader2 size={14} className="animate-spin" />
-                        ) : (
-                          <UserCheck size={14} />
-                        )}
-                        Following
-                      </Button>
-                      <Button
-                        onClick={handleMessageUser}
-                        className="rounded-xl gap-2 h-9 px-5 text-sm gradient-btn"
-                      >
-                        <MessageCircle size={14} className="text-white" />
-                        <span className="text-white">Message</span>
-                      </Button>
-                    </>
-                  ) : isPending ? (
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleMessageUser}
+                    className="rounded-xl gap-1.5 h-9 px-4 text-sm gradient-btn"
+                  >
+                    <MessageCircle size={13} className="text-white" />
+                    <span className="text-white">Message</span>
+                  </Button>
+                </>
+              ) : isPending ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCancelRequest}
+                  className="rounded-xl gap-1.5 h-9 px-4 text-sm"
+                >
+                  <Clock size={13} />
+                  Requested · Cancel
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    size="sm"
+                    onClick={handleFollow}
+                    disabled={followLoading}
+                    className="rounded-xl gap-1.5 h-9 px-4 text-sm gradient-btn"
+                  >
+                    {followLoading ? (
+                      <Loader2 size={13} className="animate-spin text-white" />
+                    ) : (
+                      <UserPlus size={13} className="text-white" />
+                    )}
+                    <span className="text-white">
+                      {targetUser.isPrivate ? "Request" : "Follow"}
+                    </span>
+                  </Button>
+                  {!targetUser.isPrivate && (
                     <Button
                       variant="outline"
-                      onClick={handleCancelRequest}
-                      className="rounded-xl gap-2 h-9 px-5 text-sm"
+                      size="sm"
+                      onClick={handleMessageUser}
+                      className="rounded-xl gap-1.5 h-9 px-4 text-sm"
                     >
-                      <Clock size={14} />
-                      Requested · Cancel
+                      <MessageCircle size={13} />
+                      Message
                     </Button>
-                  ) : (
-                    <>
-                      <Button
-                        onClick={handleFollow}
-                        disabled={followLoading}
-                        className="rounded-xl gap-2 h-9 px-5 text-sm gradient-btn"
-                      >
-                        {followLoading ? (
-                          <Loader2 size={14} className="animate-spin" />
-                        ) : (
-                          <UserPlus size={14} className="text-white" />
-                        )}
-                        <span className="text-white">
-                          {targetUser.isPrivate ? "Request" : "Follow"}
-                        </span>
-                      </Button>
-                      {!targetUser.isPrivate && (
-                        <Button
-                          variant="outline"
-                          onClick={handleMessageUser}
-                          className="rounded-xl gap-2 h-9 px-5 text-sm"
-                        >
-                          <MessageCircle size={14} />
-                          Message
-                        </Button>
-                      )}
-                    </>
                   )}
-                </div>
+                </>
               )}
-            </>
-          ) : (
-            /* Edit form */
-            <div className="w-full space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                    <User size={11} /> Full Name
-                  </Label>
-                  <Input
-                    value={form.fullName}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, fullName: e.target.value }))
-                    }
-                    placeholder="Your full name"
-                    className="rounded-xl text-sm"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                    <Phone size={11} /> Phone
-                  </Label>
-                  <Input
-                    value={form.phoneNumber}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, phoneNumber: e.target.value }))
-                    }
-                    placeholder="+1 234 567 890"
-                    className="rounded-xl text-sm"
-                  />
-                </div>
-              </div>
+            </div>
+          )}
+        </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                    <Calendar size={11} /> Birth Date
-                  </Label>
-                  <Input
-                    type="date"
-                    value={form.birthDate}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, birthDate: e.target.value }))
-                    }
-                    className="rounded-xl text-sm"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                    <Globe size={11} /> Timezone
-                  </Label>
-                  <Input
-                    value={form.timezone}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, timezone: e.target.value }))
-                    }
-                    placeholder="UTC, EST, PST..."
-                    className="rounded-xl text-sm"
-                  />
-                </div>
+        {/* Profile info */}
+        {!editing ? (
+          <div className="space-y-4">
+            {/* Name + username */}
+            <div className="space-y-1">
+              {targetUser.fullName && (
+                <h2 className="text-xl font-bold tracking-tight text-foreground">
+                  {targetUser.fullName}
+                </h2>
+              )}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-base font-semibold gradient-text">
+                  @{targetUser.username}
+                </span>
+                {targetUser.isPrivate && (
+                  <Badge
+                    variant="outline"
+                    className="gap-1 rounded-full text-xs h-5 px-2"
+                  >
+                    <Lock size={9} />
+                    Private
+                  </Badge>
+                )}
+                {targetUser.onlineStatus && (
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <span className="w-2 h-2 rounded-full bg-online-dot inline-block online-pulse" />
+                    Active now
+                  </div>
+                )}
               </div>
+            </div>
 
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                  <Link2 size={11} /> Website URL
-                </Label>
-                <Input
-                  value={form.websiteUrl}
-                  onChange={(e) =>
-                    setForm((p) => ({ ...p, websiteUrl: e.target.value }))
-                  }
-                  placeholder="https://yoursite.com"
-                  className="rounded-xl text-sm"
+            {/* Bio */}
+            {targetUser.bio && (
+              <p className="text-sm text-foreground/80 leading-relaxed max-w-sm">
+                {targetUser.bio}
+              </p>
+            )}
+
+            {/* Website */}
+            {targetUser.websiteUrl && (
+              <a
+                href={
+                  targetUser.websiteUrl.startsWith("http")
+                    ? targetUser.websiteUrl
+                    : `https://${targetUser.websiteUrl}`
+                }
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-sm text-primary hover:underline"
+              >
+                <ExternalLink size={13} />
+                {targetUser.websiteUrl.replace(/^https?:\/\//, "")}
+              </a>
+            )}
+
+            {/* Meta info */}
+            <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+              {memberSince && (
+                <span className="flex items-center gap-1">
+                  <Star size={11} />
+                  Joined {memberSince}
+                </span>
+              )}
+              {birthDateFormatted && (
+                <span className="flex items-center gap-1">
+                  <Calendar size={11} />
+                  {birthDateFormatted}
+                </span>
+              )}
+              {targetUser.timezone && (
+                <span className="flex items-center gap-1">
+                  <Globe size={11} />
+                  {targetUser.timezone}
+                </span>
+              )}
+            </div>
+
+            {/* Stats bar */}
+            <div className="flex gap-6 py-3 border-t border-b border-border">
+              <div className="flex flex-col items-center gap-0.5">
+                <span className="text-xl font-bold leading-tight tabular-nums">
+                  {targetUser.followers.length}
+                </span>
+                <span className="text-xs text-muted-foreground font-medium">
+                  Followers
+                </span>
+              </div>
+              <div className="w-px bg-border" />
+              <div className="flex flex-col items-center gap-0.5">
+                <span className="text-xl font-bold leading-tight tabular-nums">
+                  {targetUser.following.length}
+                </span>
+                <span className="text-xs text-muted-foreground font-medium">
+                  Following
+                </span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* ── Edit form ── */
+          <div className="space-y-5">
+            <h2 className="font-bold text-base text-foreground">
+              Edit Profile
+            </h2>
+
+            {/* Avatar URL */}
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                Profile Picture URL
+              </Label>
+              <div className="flex items-center gap-3">
+                <UserAvatar
+                  src={form.profilePicture || targetUser.profilePicture}
+                  username={targetUser.username}
+                  size="sm"
+                  showOnline={false}
                 />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  Bio
-                </Label>
-                <Textarea
-                  value={form.bio}
-                  onChange={(e) =>
-                    setForm((p) => ({ ...p, bio: e.target.value }))
-                  }
-                  placeholder="Tell something about yourself..."
-                  className="rounded-xl resize-none text-sm"
-                  rows={3}
-                  maxLength={160}
-                />
-                <p className="text-xs text-muted-foreground text-right">
-                  {form.bio.length}/160
-                </p>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  Avatar URL
-                </Label>
                 <Input
                   value={form.profilePicture}
                   onChange={(e) =>
                     setForm((p) => ({ ...p, profilePicture: e.target.value }))
                   }
                   placeholder="https://..."
-                  className="rounded-xl text-sm"
-                />
-              </div>
-
-              <div className="flex items-center justify-between p-4 bg-muted/40 rounded-xl">
-                <div>
-                  <p className="text-sm font-medium flex items-center gap-1.5">
-                    <Lock size={13} /> Private account
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Only approved followers can message you
-                  </p>
-                </div>
-                <Switch
-                  checked={form.isPrivate}
-                  onCheckedChange={(v) =>
-                    setForm((p) => ({ ...p, isPrivate: v }))
-                  }
+                  className="rounded-xl text-sm flex-1"
                 />
               </div>
             </div>
-          )}
-        </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                  <User size={11} /> Full Name
+                </Label>
+                <Input
+                  value={form.fullName}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, fullName: e.target.value }))
+                  }
+                  placeholder="Your full name"
+                  className="rounded-xl text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                  <Phone size={11} /> Phone
+                </Label>
+                <Input
+                  value={form.phoneNumber}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, phoneNumber: e.target.value }))
+                  }
+                  placeholder="+1 234 567 890"
+                  className="rounded-xl text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                  <Calendar size={11} /> Birth Date
+                </Label>
+                <Input
+                  type="date"
+                  value={form.birthDate}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, birthDate: e.target.value }))
+                  }
+                  className="rounded-xl text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                  <Globe size={11} /> Timezone
+                </Label>
+                <Input
+                  value={form.timezone}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, timezone: e.target.value }))
+                  }
+                  placeholder="UTC, EST, PST..."
+                  className="rounded-xl text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                <Link2 size={11} /> Website URL
+              </Label>
+              <Input
+                value={form.websiteUrl}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, websiteUrl: e.target.value }))
+                }
+                placeholder="https://yoursite.com"
+                className="rounded-xl text-sm"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                Bio
+              </Label>
+              <Textarea
+                value={form.bio}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, bio: e.target.value }))
+                }
+                placeholder="Tell something about yourself..."
+                className="rounded-xl resize-none text-sm"
+                rows={3}
+                maxLength={160}
+              />
+              <p className="text-xs text-muted-foreground text-right">
+                {form.bio.length}/160
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between p-4 bg-muted/40 rounded-xl border border-border">
+              <div>
+                <p className="text-sm font-semibold flex items-center gap-1.5">
+                  <Lock size={13} />
+                  Private account
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Only approved followers can message you
+                </p>
+              </div>
+              <Switch
+                checked={form.isPrivate}
+                onCheckedChange={(v) =>
+                  setForm((p) => ({ ...p, isPrivate: v }))
+                }
+              />
+            </div>
+          </div>
+        )}
 
         {/* Incoming follow requests — own profile only */}
         {isOwnProfile && incomingRequests.length > 0 && (
-          <div className="rounded-2xl border border-border overflow-hidden">
-            <div className="px-4 py-3 border-b border-border bg-muted/30">
+          <div className="mt-6 rounded-2xl border border-border overflow-hidden">
+            <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center justify-between">
               <p className="text-sm font-semibold flex items-center gap-2">
                 <UserPlus size={14} className="text-primary" />
                 Follow Requests
-                <span className="ml-auto text-xs bg-primary text-primary-foreground rounded-full px-2 py-0.5 font-bold">
-                  {incomingRequests.length}
-                </span>
               </p>
+              <Badge className="text-xs rounded-full gradient-btn text-white border-0">
+                {incomingRequests.length}
+              </Badge>
             </div>
             <ScrollArea className="max-h-64">
               {incomingRequests.map((req) => {
@@ -639,6 +734,79 @@ export function ProfilePage() {
             </ScrollArea>
           </div>
         )}
+
+        {/* Bio/detail cards visible on profile */}
+        {!editing && isOwnProfile && (
+          <div className="mt-6 mb-8 space-y-3">
+            <Separator />
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest pt-1">
+              Account Details
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {targetUser.email && (
+                <InfoCard
+                  icon={<User size={13} />}
+                  label="Email"
+                  value={targetUser.email}
+                />
+              )}
+              {targetUser.phoneNumber && (
+                <InfoCard
+                  icon={<Phone size={13} />}
+                  label="Phone"
+                  value={targetUser.phoneNumber}
+                />
+              )}
+              {birthDateFormatted && (
+                <InfoCard
+                  icon={<Calendar size={13} />}
+                  label="Birthday"
+                  value={birthDateFormatted}
+                />
+              )}
+              {targetUser.timezone && (
+                <InfoCard
+                  icon={<Globe size={13} />}
+                  label="Timezone"
+                  value={targetUser.timezone}
+                />
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <footer className="py-6 text-center mt-4">
+        <p className="text-xs text-muted-foreground">
+          © {new Date().getFullYear()}.{" "}
+          <a
+            href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(window.location.hostname)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-primary transition-colors"
+          >
+            Built with love using caffeine.ai
+          </a>
+        </p>
+      </footer>
+    </div>
+  );
+}
+
+function InfoCard({
+  icon,
+  label,
+  value,
+}: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-3 p-3 bg-muted/30 rounded-xl border border-border/50">
+      <span className="text-primary flex-shrink-0">{icon}</span>
+      <div className="min-w-0">
+        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+          {label}
+        </p>
+        <p className="text-sm font-medium text-foreground truncate">{value}</p>
       </div>
     </div>
   );
