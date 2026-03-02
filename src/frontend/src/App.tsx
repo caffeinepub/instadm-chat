@@ -14,6 +14,7 @@ import { ChatProvider } from "./contexts/ChatContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { ArchivePage } from "./pages/ArchivePage";
 import { BookmarksPage } from "./pages/BookmarksPage";
+import { ChannelsPage } from "./pages/ChannelsPage";
 import { ExplorePage } from "./pages/ExplorePage";
 import { FeedPage } from "./pages/FeedPage";
 import { HomePage } from "./pages/HomePage";
@@ -24,6 +25,7 @@ import { NotesPage } from "./pages/NotesPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { PublicRoomsPage } from "./pages/PublicRoomsPage";
+import { SavedMessagesPage } from "./pages/SavedMessagesPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { UsernameSetupPage } from "./pages/UsernameSetupPage";
 import {
@@ -208,6 +210,20 @@ const roomsRoute = createRoute({
   component: PublicRoomsPage,
 });
 
+const savedRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/saved",
+  beforeLoad: requireAuth,
+  component: SavedMessagesPage,
+});
+
+const channelsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/channels",
+  beforeLoad: requireAuth,
+  component: ChannelsPage,
+});
+
 // ─── Router ───────────────────────────────────────────────────────────────────
 const routeTree = rootRoute.addChildren([
   loginRoute,
@@ -223,6 +239,8 @@ const routeTree = rootRoute.addChildren([
   bookmarksRoute,
   joinGroupRoute,
   roomsRoute,
+  savedRoute,
+  channelsRoute,
 ]);
 
 const router = createRouter({ routeTree });

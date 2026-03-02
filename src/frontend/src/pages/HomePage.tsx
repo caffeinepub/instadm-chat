@@ -9,11 +9,13 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   Archive,
   Bell,
+  Bookmark,
   Compass,
   LayoutGrid,
   LogOut,
   MessageCircle,
   MessageSquareDashed,
+  Radio,
   Settings,
   User,
   Users2,
@@ -120,9 +122,19 @@ export function HomePage() {
       action: () => navigate({ to: "/notifications" }),
     },
     {
+      icon: <Bookmark size={22} />,
+      label: "Saved",
+      action: () => navigate({ to: "/saved" }),
+    },
+    {
       icon: <Users2 size={22} />,
       label: "Rooms",
       action: () => navigate({ to: "/rooms" }),
+    },
+    {
+      icon: <Radio size={22} />,
+      label: "Channels",
+      action: () => navigate({ to: "/channels" }),
     },
     {
       icon: <Archive size={22} />,

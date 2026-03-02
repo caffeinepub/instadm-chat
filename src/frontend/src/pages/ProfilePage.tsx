@@ -20,6 +20,7 @@ import {
   Loader2,
   Lock,
   MessageCircle,
+  NotebookPen,
   Phone,
   Star,
   User,
@@ -35,16 +36,19 @@ import { UserAvatar } from "../components/chat/UserAvatar";
 import { VerifiedBadge } from "../components/chat/VerifiedBadge";
 import { useAuth } from "../contexts/AuthContext";
 import { useChat } from "../contexts/ChatContext";
+import { extractPlainBio } from "../services/bioStorageService";
 import {
   ALL_BADGES,
   type MoodOption,
   type ProfileView,
   getBadges,
   getMood,
+  getNote,
   getProfileViews,
   isUserVerified,
   recordProfileView,
   setMood,
+  setNote,
 } from "../services/featureService";
 import {
   getPendingRequestsForUser,
@@ -109,6 +113,15 @@ export function ProfilePage() {
   const myBadges =
     isOwnProfile && currentUser ? getBadges(currentUser.uid) : [];
 
+  // Note feature
+  const [noteText, setNoteText] = useState<string>(() =>
+    isOwnProfile && currentUser ? getNote(currentUser.uid) : "",
+  );
+  const [editingNote, setEditingNote] = useState(false);
+  // For other users' notes — read from their uid (stored locally when they visited)
+  const otherUserNote =
+    !isOwnProfile && targetUser ? getNote(targetUser.uid) : "";
+
   // Profile views
   const [profileViews, setProfileViews] = useState<ProfileView[]>([]);
 
@@ -139,6 +152,13 @@ export function ProfilePage() {
     if (!currentUser) return;
     setMood(currentUser.uid, mood);
     setCurrentMood(mood);
+  };
+
+  const handleNoteSave = () => {
+    if (!currentUser) return;
+    setNote(currentUser.uid, noteText);
+    setEditingNote(false);
+    toast.success(noteText.trim() ? "Note updated" : "Note cleared");
   };
 
   if (!targetUser) {
@@ -511,10 +531,69 @@ export function ProfilePage() {
             </div>
 
             {/* Bio */}
-            {targetUser.bio && (
+            {extractPlainBio(targetUser.bio || "") && (
               <p className="text-sm text-foreground/80 leading-relaxed max-w-sm">
-                {targetUser.bio}
+                {extractPlainBio(targetUser.bio || "")}
               </p>
+            )}
+
+            {/* Note pill — other user's note (visible if they set one) */}
+            {!isOwnProfile && otherUserNote && (
+              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 max-w-xs">
+                <NotebookPen size={11} className="text-primary flex-shrink-0" />
+                <span className="text-xs text-primary font-medium truncate">
+                  {otherUserNote}
+                </span>
+              </div>
+            )}
+
+            {/* Note — own profile */}
+            {isOwnProfile && (
+              <div className="space-y-2">
+                {!editingNote ? (
+                  <button
+                    type="button"
+                    onClick={() => setEditingNote(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted/50 border border-border hover:border-primary/40 hover:bg-primary/5 transition-colors max-w-xs group"
+                  >
+                    <NotebookPen
+                      size={11}
+                      className="text-muted-foreground group-hover:text-primary flex-shrink-0"
+                    />
+                    <span className="text-xs text-muted-foreground group-hover:text-primary truncate">
+                      {noteText || "Add a note..."}
+                    </span>
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2 max-w-xs">
+                    <input
+                      type="text"
+                      value={noteText}
+                      onChange={(e) => setNoteText(e.target.value.slice(0, 60))}
+                      placeholder="What's on your mind? (60 chars)"
+                      className="flex-1 text-xs px-3 py-1.5 rounded-full bg-muted/50 border border-primary/30 focus:outline-none focus:border-primary text-foreground placeholder-muted-foreground"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleNoteSave();
+                        if (e.key === "Escape") setEditingNote(false);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleNoteSave}
+                      className="w-6 h-6 rounded-full bg-primary flex items-center justify-center flex-shrink-0"
+                    >
+                      <Check size={11} className="text-white" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingNote(false)}
+                      className="w-6 h-6 rounded-full bg-muted flex items-center justify-center flex-shrink-0"
+                    >
+                      <X size={11} className="text-muted-foreground" />
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
 
             {/* Website */}

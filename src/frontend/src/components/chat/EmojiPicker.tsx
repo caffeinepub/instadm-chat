@@ -54,21 +54,37 @@ const EMOJIS = [
 interface EmojiPickerProps {
   onEmojiSelect: (emoji: string) => void;
   currentUid?: string;
+  /** When true, renders a compact grid icon instead of a full button */
+  compact?: boolean;
 }
 
-export function EmojiPicker({ onEmojiSelect, currentUid }: EmojiPickerProps) {
+export function EmojiPicker({
+  onEmojiSelect,
+  currentUid,
+  compact,
+}: EmojiPickerProps) {
   const customReactions = currentUid ? getCustomReactions(currentUid) : [];
 
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <Smile size={22} />
-        </Button>
+        {compact ? (
+          <button
+            type="button"
+            className="w-9 h-9 rounded-full bg-yellow-500/15 flex items-center justify-center hover:bg-yellow-500/25 transition-colors"
+            title="Emoji"
+          >
+            <Smile size={17} className="text-yellow-500" />
+          </button>
+        ) : (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <Smile size={22} />
+          </Button>
+        )}
       </PopoverTrigger>
       <PopoverContent
         className="w-64 p-2 rounded-2xl shadow-xl"

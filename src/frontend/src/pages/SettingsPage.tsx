@@ -25,6 +25,10 @@ import {
   Calendar,
   ChevronRight,
   Clock,
+  Eye,
+  EyeOff,
+  Folder,
+  FolderPlus,
   Globe,
   Link2,
   Loader2,
@@ -32,6 +36,7 @@ import {
   LogOut,
   MessageSquare,
   Moon,
+  NotebookPen,
   Palette,
   Phone,
   Plus,
@@ -53,25 +58,35 @@ import { UserAvatar } from "../components/chat/UserAvatar";
 import { useAuth } from "../contexts/AuthContext";
 import { useChat } from "../contexts/ChatContext";
 import { useTheme } from "../contexts/ThemeContext";
+import { extractPlainBio } from "../services/bioStorageService";
 import {
   ACCENT_COLORS,
+  type ChatFolder,
+  type LastSeenPrivacy,
   type MoodOption,
   applyAccentColor,
   applyBubbleStyle,
   applyFontSize,
+  createChatFolder,
+  deleteChatFolder,
   formatScreenTime,
   getAccentColor,
   getBubbleStyle,
+  getChatFolders,
   getCustomReactions,
   getFontSize,
+  getLastSeenPrivacy,
   getMood,
+  getNote,
   getTodayScreenTime,
   getWeekScreenTime,
   saveCustomReactions,
   setAccentColorPref,
   setBubbleStylePref,
   setFontSizePref,
+  setLastSeenPrivacy,
   setMood,
+  setNote,
 } from "../services/featureService";
 
 export function SettingsPage() {
@@ -90,7 +105,7 @@ export function SettingsPage() {
   const { users, refreshChats } = useChat();
   const { theme, toggleTheme } = useTheme();
 
-  const [bio, setBio] = useState(currentUser?.bio ?? "");
+  const [bio, setBio] = useState(() => extractPlainBio(currentUser?.bio ?? ""));
   const [profilePicture, setProfilePicture] = useState(
     currentUser?.profilePicture ?? "",
   );
@@ -104,6 +119,17 @@ export function SettingsPage() {
 
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Note / short status
+  const [noteText, setNoteText] = useState(() =>
+    currentUser ? getNote(currentUser.uid) : "",
+  );
+
+  const handleNoteSave = () => {
+    if (!currentUser) return;
+    setNote(currentUser.uid, noteText);
+    toast.success(noteText.trim() ? "Note updated" : "Note cleared");
+  };
 
   const [currentMood, setCurrentMoodState] = useState<MoodOption>(() =>
     currentUser ? getMood(currentUser.uid) : "",
@@ -153,6 +179,40 @@ export function SettingsPage() {
     currentUser ? getCustomReactions(currentUser.uid) : [],
   );
   const [newCustomEmoji, setNewCustomEmoji] = useState("");
+
+  // Last seen privacy
+  const [lastSeenPrivacy, setLastSeenPrivacyState] = useState<LastSeenPrivacy>(
+    () => (currentUser ? getLastSeenPrivacy(currentUser.uid) : "everyone"),
+  );
+
+  // Chat folders
+  const [chatFolders, setChatFoldersState] = useState<ChatFolder[]>(() =>
+    currentUser ? getChatFolders(currentUser.uid) : [],
+  );
+  const [newFolderName, setNewFolderName] = useState("");
+
+  const handleLastSeenPrivacyChange = (privacy: LastSeenPrivacy) => {
+    if (!currentUser) return;
+    setLastSeenPrivacy(currentUser.uid, privacy);
+    setLastSeenPrivacyState(privacy);
+  };
+
+  const handleCreateFolder = () => {
+    if (!currentUser || !newFolderName.trim()) return;
+    const colors = ["#E1306C", "#833AB4", "#0083B0", "#11998e", "#F7971E"];
+    const color = colors[chatFolders.length % colors.length];
+    createChatFolder(currentUser.uid, newFolderName.trim(), color);
+    setChatFoldersState(getChatFolders(currentUser.uid));
+    setNewFolderName("");
+    toast.success("Folder created");
+  };
+
+  const handleDeleteFolder = (folderId: string) => {
+    if (!currentUser) return;
+    deleteChatFolder(currentUser.uid, folderId);
+    setChatFoldersState(getChatFolders(currentUser.uid));
+    toast.success("Folder deleted");
+  };
 
   const handleAddCustomReaction = () => {
     if (!currentUser || !newCustomEmoji.trim()) return;
@@ -283,7 +343,8 @@ export function SettingsPage() {
               </p>
             )}
             <p className="text-xs text-muted-foreground mt-0.5 truncate">
-              {currentUser?.bio || "No bio yet — tap to edit"}
+              {extractPlainBio(currentUser?.bio || "") ||
+                "No bio yet — tap to edit"}
             </p>
           </div>
           <ChevronRight
@@ -417,6 +478,37 @@ export function SettingsPage() {
             />
             <p className="text-xs text-muted-foreground text-right">
               {bio.length}/160
+            </p>
+          </div>
+        </SettingSection>
+
+        <Separator />
+
+        {/* Note section */}
+        <SettingSection
+          title="Note"
+          icon={<NotebookPen size={13} />}
+          description="A short status visible on your profile (60 chars)"
+        >
+          <div className="px-5 pb-4 space-y-2">
+            <div className="flex items-center gap-2">
+              <Input
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value.slice(0, 60))}
+                placeholder="What's on your mind?"
+                className="rounded-xl text-sm flex-1"
+                maxLength={60}
+              />
+              <Button
+                size="sm"
+                className="rounded-xl gradient-btn flex-shrink-0"
+                onClick={handleNoteSave}
+              >
+                <span className="text-white text-xs">Save</span>
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground text-right">
+              {noteText.length}/60
             </p>
           </div>
         </SettingSection>
@@ -657,6 +749,130 @@ export function SettingsPage() {
             description="Chats you've silenced"
             right={<ChevronRight size={16} className="text-muted-foreground" />}
           />
+        </SettingSection>
+
+        <Separator />
+
+        {/* Last Seen Privacy */}
+        <SettingSection
+          title="Last Seen"
+          icon={<Eye size={13} />}
+          description="Control who can see your last active status"
+        >
+          <div className="px-5 pb-4 space-y-2">
+            {(
+              [
+                {
+                  value: "everyone",
+                  label: "Everyone",
+                  icon: <Eye size={14} />,
+                },
+                {
+                  value: "followers",
+                  label: "My Followers",
+                  icon: <Shield size={14} />,
+                },
+                {
+                  value: "nobody",
+                  label: "Nobody",
+                  icon: <EyeOff size={14} />,
+                },
+              ] as {
+                value: LastSeenPrivacy;
+                label: string;
+                icon: React.ReactNode;
+              }[]
+            ).map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => handleLastSeenPrivacyChange(opt.value)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all text-left ${
+                  lastSeenPrivacy === opt.value
+                    ? "border-primary bg-primary/8 text-primary"
+                    : "border-border text-foreground hover:border-primary/30"
+                }`}
+              >
+                <span
+                  className={
+                    lastSeenPrivacy === opt.value
+                      ? "text-primary"
+                      : "text-muted-foreground"
+                  }
+                >
+                  {opt.icon}
+                </span>
+                <span className="text-sm font-medium">{opt.label}</span>
+                {lastSeenPrivacy === opt.value && (
+                  <div className="ml-auto w-4 h-4 rounded-full bg-primary flex items-center justify-center">
+                    <div className="w-2 h-2 rounded-full bg-white" />
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+        </SettingSection>
+
+        <Separator />
+
+        {/* Chat Folders */}
+        <SettingSection
+          title="Chat Folders"
+          icon={<Folder size={13} />}
+          description="Organize your chats into custom folders"
+        >
+          <div className="px-5 pb-4 space-y-3">
+            {chatFolders.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No folders yet</p>
+            ) : (
+              <div className="space-y-1.5">
+                {chatFolders.map((folder) => (
+                  <div
+                    key={folder.id}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-muted/30 border border-border"
+                  >
+                    <span
+                      className="w-3 h-3 rounded-full flex-shrink-0"
+                      style={{ background: folder.color }}
+                    />
+                    <span className="text-sm font-medium flex-1">
+                      {folder.name}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {folder.chatIds.length} chat
+                      {folder.chatIds.length !== 1 ? "s" : ""}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteFolder(folder.id)}
+                      className="text-muted-foreground hover:text-destructive transition-colors p-1"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <Input
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleCreateFolder()}
+                placeholder="New folder name..."
+                className="flex-1 rounded-xl h-9 text-sm"
+                maxLength={20}
+              />
+              <Button
+                size="sm"
+                className="rounded-xl h-9 px-3 gradient-btn gap-1.5"
+                onClick={handleCreateFolder}
+                disabled={!newFolderName.trim()}
+              >
+                <FolderPlus size={13} className="text-white" />
+                <span className="text-white text-xs">Add</span>
+              </Button>
+            </div>
+          </div>
         </SettingSection>
 
         <Separator />

@@ -1,11 +1,19 @@
 import { cn } from "@/lib/utils";
 import { Plus } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
+import { useActor } from "../../hooks/useActor";
+import {
+  buildBioWithPayload,
+  decodeStoriesFromBio,
+  extractPlainBio,
+  mergeAllStories,
+} from "../../services/bioStorageService";
 import {
   type Story,
   createStory,
   getActiveStories,
+  getPosts,
   hasViewedStory,
 } from "../../services/featureService";
 import { StoryViewer } from "./StoryViewer";
@@ -28,6 +36,7 @@ interface StoryBarProps {
 
 export function StoryBar({ className }: StoryBarProps) {
   const { currentUser } = useAuth();
+  const { actor } = useActor();
   const uid = currentUser!.uid;
 
   const [stories, setStories] = useState<Story[]>(() => getActiveStories());
@@ -36,6 +45,7 @@ export function StoryBar({ className }: StoryBarProps) {
   const [showCreate, setShowCreate] = useState(false);
   const [newText, setNewText] = useState("");
   const [selectedBg, setSelectedBg] = useState(STORY_BG_COLORS[0]);
+  const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Group stories by author
   const storiesByAuthor: Map<string, Story[]> = new Map();
@@ -49,7 +59,85 @@ export function StoryBar({ className }: StoryBarProps) {
   const myStories = storiesByAuthor.get(uid) ?? [];
   const otherAuthors = [...storiesByAuthor.keys()].filter((id) => id !== uid);
 
-  const refresh = () => setStories(getActiveStories());
+  // ─── Load global stories from ALL users via ICP ─────────────────────────────
+  const loadGlobalStories = useCallback(
+    async (_silent = false) => {
+      try {
+        const localStories = getActiveStories();
+
+        if (actor) {
+          const allUsers = await actor.searchUsersByUsername("");
+          const storiesPerUser: Story[][] = [localStories];
+
+          for (const profile of allUsers) {
+            const profileUid = profile._id?.toString();
+            if (!profileUid || profileUid === uid) continue;
+            const rawBio = profile.bio ?? "";
+            const userStories = decodeStoriesFromBio(rawBio);
+            if (userStories.length > 0) {
+              storiesPerUser.push(userStories);
+            }
+          }
+
+          const merged = mergeAllStories(storiesPerUser);
+          setStories(merged);
+        } else {
+          setStories(localStories);
+        }
+      } catch {
+        setStories(getActiveStories());
+      }
+    },
+    [actor, uid],
+  );
+
+  useEffect(() => {
+    loadGlobalStories(false);
+
+    refreshTimerRef.current = setInterval(() => {
+      loadGlobalStories(true);
+    }, 10000);
+
+    return () => {
+      if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
+    };
+  }, [loadGlobalStories]);
+
+  // BroadcastChannel for same-browser story sync
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const channel = new BroadcastChannel("linkr_story_updates");
+    channel.onmessage = () => {
+      loadGlobalStories(true);
+    };
+    return () => channel.close();
+  }, [loadGlobalStories]);
+
+  const refresh = useCallback(() => {
+    loadGlobalStories(true);
+  }, [loadGlobalStories]);
+
+  const saveStoriesToBio = useCallback(async () => {
+    if (!actor || !currentUser) return;
+    try {
+      const callerProfile = await actor.getCallerUserProfile();
+      if (!callerProfile) return;
+
+      const plainBio = extractPlainBio(callerProfile.bio ?? "");
+      const myActiveStories = getActiveStories().filter(
+        (s) => s.authorId === uid,
+      );
+      const myPosts = getPosts().filter((p) => p.authorId === uid);
+      const newBio = buildBioWithPayload(plainBio, myPosts, myActiveStories);
+
+      await actor.saveCallerUserProfile({
+        ...callerProfile,
+        bio: newBio,
+      });
+    } catch {
+      // Non-fatal
+    }
+  }, [actor, currentUser, uid]);
 
   const handleCreate = () => {
     if (!newText.trim()) return;
@@ -64,6 +152,16 @@ export function StoryBar({ className }: StoryBarProps) {
     setNewText("");
     setShowCreate(false);
     refresh();
+
+    // Save to ICP bio for cross-device visibility
+    saveStoriesToBio();
+
+    // Broadcast to other tabs
+    if (typeof BroadcastChannel !== "undefined") {
+      const channel = new BroadcastChannel("linkr_story_updates");
+      channel.postMessage({ type: "new_story" });
+      channel.close();
+    }
   };
 
   const openStories = (authorId: string) => {

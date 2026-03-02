@@ -900,3 +900,45 @@ html.bubble-classic .message-bubble { border-radius: 18px !important; }
 .accent-swatch.selected {
   box-shadow: 0 0 0 2px oklch(var(--background)), 0 0 0 4px currentColor;
 }
+
+/* ─── Double-tap heart animation ─────────────────────────────── */
+@keyframes heartPop {
+  0% { opacity: 0; transform: scale(0.3); }
+  40% { opacity: 1; transform: scale(1.4); }
+  70% { transform: scale(1.0); }
+  100% { opacity: 0; transform: scale(1.1); }
+}
+
+/* ─── No scrollbar (for folder tabs) ────────────────────────── */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* ─── Pinned message banner ──────────────────────────────────── */
+.pinned-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  border-bottom: 1px solid oklch(var(--border));
+  background: oklch(var(--primary) / 0.06);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.pinned-banner:hover {
+  background: oklch(var(--primary) / 0.1);
+}
+
+/* ─── Undo send banner ───────────────────────────────────────── */
+@keyframes undoBannerIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.undo-banner {
+  animation: undoBannerIn 0.2s ease-out forwards;
+}

@@ -1,5 +1,16 @@
 import { cn } from "@/lib/utils";
-import { Bookmark, Edit2, Flag, Reply, Share2, Trash2, X } from "lucide-react";
+import {
+  Bookmark,
+  BookmarkCheck,
+  Edit2,
+  Flag,
+  Pin,
+  PinOff,
+  Reply,
+  Share2,
+  Trash2,
+  X,
+} from "lucide-react";
 import type React from "react";
 import { useEffect, useRef } from "react";
 
@@ -11,6 +22,8 @@ interface MessageContextMenuProps {
   isSender: boolean;
   isOptimistic?: boolean;
   isBookmarked?: boolean;
+  isSaved?: boolean;
+  isPinned?: boolean;
   onReact: (emoji: string) => void;
   onReply: () => void;
   onEdit?: () => void;
@@ -18,6 +31,8 @@ interface MessageContextMenuProps {
   onDeleteForEveryone?: () => void;
   onForward: () => void;
   onBookmark?: () => void;
+  onSave?: () => void;
+  onPin?: () => void;
   onReport?: () => void;
   onClose: () => void;
 }
@@ -28,6 +43,8 @@ export function MessageContextMenu({
   isSender,
   isOptimistic = false,
   isBookmarked = false,
+  isSaved = false,
+  isPinned = false,
   onReact,
   onReply,
   onEdit,
@@ -35,6 +52,8 @@ export function MessageContextMenu({
   onDeleteForEveryone,
   onForward,
   onBookmark,
+  onSave,
+  onPin,
   onReport,
   onClose,
 }: MessageContextMenuProps) {
@@ -130,6 +149,32 @@ export function MessageContextMenu({
             label={isBookmarked ? "Remove Bookmark" : "Bookmark"}
             onClick={() => {
               onBookmark();
+              onClose();
+            }}
+          />
+        )}
+        {!isOptimistic && onSave && (
+          <MenuAction
+            icon={
+              isSaved ? (
+                <BookmarkCheck size={14} />
+              ) : (
+                <BookmarkCheck size={14} />
+              )
+            }
+            label={isSaved ? "Unsave" : "Save Message"}
+            onClick={() => {
+              onSave();
+              onClose();
+            }}
+          />
+        )}
+        {!isOptimistic && onPin && (
+          <MenuAction
+            icon={isPinned ? <PinOff size={14} /> : <Pin size={14} />}
+            label={isPinned ? "Unpin" : "Pin Message"}
+            onClick={() => {
+              onPin();
               onClose();
             }}
           />

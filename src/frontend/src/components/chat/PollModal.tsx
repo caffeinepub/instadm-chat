@@ -7,7 +7,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { BarChart2, Plus, Trash2, X } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { BarChart2, EyeOff, Plus, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { createPoll } from "../../services/featureService";
@@ -29,6 +30,7 @@ export function PollModal({
 }: PollModalProps) {
   const [question, setQuestion] = useState("");
   const [options, setOptions] = useState(["", ""]);
+  const [isAnonymous, setIsAnonymous] = useState(false);
 
   const handleCreate = () => {
     if (!question.trim()) {
@@ -40,10 +42,17 @@ export function PollModal({
       toast.error("Please enter at least 2 options");
       return;
     }
-    const poll = createPoll(chatId, question.trim(), validOptions, createdBy);
+    const poll = createPoll(
+      chatId,
+      question.trim(),
+      validOptions,
+      createdBy,
+      isAnonymous,
+    );
     onPollCreated(poll.id);
     setQuestion("");
     setOptions(["", ""]);
+    setIsAnonymous(false);
     onClose();
     toast.success("Poll created!");
   };
@@ -126,6 +135,20 @@ export function PollModal({
                 Add option
               </button>
             )}
+          </div>
+
+          {/* Anonymous toggle */}
+          <div className="flex items-center justify-between p-3 bg-muted/40 rounded-xl border border-border">
+            <div className="flex items-center gap-2">
+              <EyeOff size={13} className="text-muted-foreground" />
+              <div>
+                <p className="text-xs font-semibold">Anonymous voting</p>
+                <p className="text-[10px] text-muted-foreground">
+                  Voters' identities are hidden
+                </p>
+              </div>
+            </div>
+            <Switch checked={isAnonymous} onCheckedChange={setIsAnonymous} />
           </div>
         </div>
 

@@ -1,5 +1,11 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,19 +24,32 @@ import {
   CheckCheck,
   Clock,
   Edit,
+  Folder,
+  FolderPlus,
   Loader2,
   MessageSquare,
+  MoreHorizontal,
   NotebookPen,
   Pin,
   Search,
   UserPlus,
   Users2,
 } from "lucide-react";
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
-import { getMood } from "../../services/featureService";
+import { extractPlainBio } from "../../services/bioStorageService";
+import {
+  type ChatFolder,
+  addChatToFolder,
+  createChatFolder,
+  getActiveStatus,
+  getActiveStatusLabel,
+  getChatFolders,
+  getMood,
+  getNote,
+} from "../../services/featureService";
 import { hasPendingRequest } from "../../services/followService";
 import type { AppUser, Chat, GroupChat } from "../../types";
 import { CreateGroupModal } from "./CreateGroupModal";
@@ -68,9 +87,16 @@ export function Sidebar({ onChatSelect, onGroupSelect }: SidebarProps) {
   const [userResults, setUserResults] = useState<AppUser[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
+  const [folders, setFolders] = useState<ChatFolder[]>([]);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currentUid = currentUser!.uid;
+
+  // Load folders on mount
+  useEffect(() => {
+    setFolders(getChatFolders(currentUid));
+  }, [currentUid]);
 
   const handleSearch = useCallback(
     (q: string) => {
@@ -179,21 +205,50 @@ export function Sidebar({ onChatSelect, onGroupSelect }: SidebarProps) {
 
   const isSearchMode = !!search.trim();
 
-  // Unified list: DM chats + group chats sorted by lastUpdated
+  // Active folder filter
+  const activeFolder = activeFolderId
+    ? folders.find((f) => f.id === activeFolderId)
+    : null;
+
+  // Unified list: DM chats + group chats sorted by lastUpdated, filtered by folder
   const allChatItems = [
-    ...regularChats.map((c) => ({
-      type: "dm" as const,
-      id: c.id,
-      updatedAt: c.lastUpdated,
-      data: c,
-    })),
-    ...groupChats.map((g) => ({
-      type: "group" as const,
-      id: g.id,
-      updatedAt: g.lastUpdated,
-      data: g,
-    })),
+    ...regularChats
+      .filter((c) => !activeFolder || activeFolder.chatIds.includes(c.id))
+      .map((c) => ({
+        type: "dm" as const,
+        id: c.id,
+        updatedAt: c.lastUpdated,
+        data: c,
+      })),
+    ...groupChats
+      .filter((g) => !activeFolder || activeFolder.chatIds.includes(g.id))
+      .map((g) => ({
+        type: "group" as const,
+        id: g.id,
+        updatedAt: g.lastUpdated,
+        data: g,
+      })),
   ].sort((a, b) => b.updatedAt - a.updatedAt);
+
+  // Create a new folder
+  const handleCreateFolder = () => {
+    const name = prompt("Folder name (e.g. Work, Friends):");
+    if (!name?.trim()) return;
+    const colors = ["#E1306C", "#833AB4", "#0083B0", "#11998e", "#F7971E"];
+    const color = colors[folders.length % colors.length];
+    const folder = createChatFolder(currentUid, name.trim(), color);
+    setFolders(getChatFolders(currentUid));
+    setActiveFolderId(folder.id);
+    toast.success(`Folder "${folder.name}" created`);
+  };
+
+  // Add chat to folder
+  const handleAddToFolder = (chatId: string, folderId: string) => {
+    addChatToFolder(currentUid, folderId, chatId);
+    setFolders(getChatFolders(currentUid));
+    const folder = folders.find((f) => f.id === folderId);
+    if (folder) toast.success(`Added to "${folder.name}"`);
+  };
 
   return (
     <div className="flex flex-col h-full bg-sidebar border-r border-sidebar-border">
@@ -213,13 +268,13 @@ export function Sidebar({ onChatSelect, onGroupSelect }: SidebarProps) {
                   variant="ghost"
                   size="icon"
                   className="w-8 h-8 rounded-xl text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
-                  onClick={() => navigate({ to: "/notes" })}
+                  onClick={() => navigate({ to: "/saved" })}
                 >
-                  <NotebookPen size={15} />
+                  <Bookmark size={15} />
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="text-xs">
-                Notes
+                Saved Messages
               </TooltipContent>
             </Tooltip>
             <Tooltip>
@@ -228,13 +283,13 @@ export function Sidebar({ onChatSelect, onGroupSelect }: SidebarProps) {
                   variant="ghost"
                   size="icon"
                   className="w-8 h-8 rounded-xl text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
-                  onClick={() => navigate({ to: "/bookmarks" })}
+                  onClick={() => navigate({ to: "/notes" })}
                 >
-                  <Bookmark size={15} />
+                  <NotebookPen size={15} />
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="text-xs">
-                Bookmarks
+                Notes
               </TooltipContent>
             </Tooltip>
             <Tooltip>
@@ -298,6 +353,75 @@ export function Sidebar({ onChatSelect, onGroupSelect }: SidebarProps) {
           )}
         </div>
       </div>
+
+      {/* Folder tabs (only show when not in search mode) */}
+      {!isSearchMode && folders.length > 0 && (
+        <div className="px-3 pb-2">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            <button
+              type="button"
+              onClick={() => setActiveFolderId(null)}
+              className={cn(
+                "flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium border transition-all",
+                !activeFolderId
+                  ? "bg-primary/10 border-primary text-primary"
+                  : "border-border text-muted-foreground hover:border-primary/40",
+              )}
+            >
+              All
+            </button>
+            {folders.map((folder) => {
+              // Count chats in this folder that have unread msgs
+              const folderUnread = folder.chatIds.reduce((acc, chatId) => {
+                const chatMsgs = messages[chatId] ?? [];
+                return (
+                  acc +
+                  chatMsgs.filter(
+                    (m) =>
+                      m.senderId !== currentUid &&
+                      !m.seenBy.includes(currentUid),
+                  ).length
+                );
+              }, 0);
+              return (
+                <button
+                  type="button"
+                  key={folder.id}
+                  onClick={() =>
+                    setActiveFolderId(
+                      activeFolderId === folder.id ? null : folder.id,
+                    )
+                  }
+                  className={cn(
+                    "flex-shrink-0 flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border transition-all",
+                    activeFolderId === folder.id
+                      ? "bg-primary/10 border-primary text-primary"
+                      : "border-border text-muted-foreground hover:border-primary/40",
+                  )}
+                >
+                  <span
+                    className="w-2 h-2 rounded-full flex-shrink-0"
+                    style={{ background: folder.color }}
+                  />
+                  {folder.name}
+                  {folderUnread > 0 && (
+                    <span className="bg-primary text-primary-foreground rounded-full text-[8px] font-bold w-3.5 h-3.5 flex items-center justify-center">
+                      {folderUnread > 9 ? "9+" : folderUnread}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={handleCreateFolder}
+              className="flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-full text-xs text-muted-foreground hover:text-foreground border border-dashed border-border/50 hover:border-primary/40 transition-all"
+            >
+              <FolderPlus size={11} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Search Results */}
       {isSearchMode ? (
@@ -364,9 +488,15 @@ export function Sidebar({ onChatSelect, onGroupSelect }: SidebarProps) {
                           </Badge>
                         )}
                       </div>
-                      {user.bio && (
+                      {extractPlainBio(user.bio || "") && (
                         <p className="text-xs text-muted-foreground truncate mt-0.5">
-                          {user.bio}
+                          {extractPlainBio(user.bio || "")}
+                        </p>
+                      )}
+                      {getNote(user.uid) && (
+                        <p className="text-[10px] text-primary/70 truncate flex items-center gap-0.5 mt-0.5">
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary/50 flex-shrink-0" />
+                          {getNote(user.uid)}
                         </p>
                       )}
                     </div>
@@ -425,27 +555,108 @@ export function Sidebar({ onChatSelect, onGroupSelect }: SidebarProps) {
               {allChatItems.map((item) => {
                 if (item.type === "group") {
                   return (
-                    <GroupListItem
+                    <div
                       key={`group_${item.id}`}
-                      group={item.data as GroupChat}
-                      users={users}
-                      currentUid={currentUid}
-                      messages={groupMessages[item.id] ?? []}
-                      isActive={activeGroupChatId === item.id}
-                      onClick={() => handleSelectGroup(item.id)}
-                    />
+                      className="relative group/item"
+                    >
+                      <GroupListItem
+                        group={item.data as GroupChat}
+                        users={users}
+                        currentUid={currentUid}
+                        messages={groupMessages[item.id] ?? []}
+                        isActive={activeGroupChatId === item.id}
+                        onClick={() => handleSelectGroup(item.id)}
+                      />
+                      {folders.length > 0 && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-lg opacity-0 group-hover/item:opacity-100 transition-opacity flex items-center justify-center hover:bg-sidebar-accent text-muted-foreground"
+                            >
+                              <MoreHorizontal size={13} />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent
+                            align="end"
+                            className="rounded-xl w-44"
+                          >
+                            <p className="px-2 py-1 text-[10px] text-muted-foreground font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                              <Folder size={9} /> Add to folder
+                            </p>
+                            {folders.map((folder) => (
+                              <DropdownMenuItem
+                                key={folder.id}
+                                onClick={() =>
+                                  handleAddToFolder(item.id, folder.id)
+                                }
+                              >
+                                <span
+                                  className="w-2 h-2 rounded-full mr-2 flex-shrink-0"
+                                  style={{ background: folder.color }}
+                                />
+                                {folder.name}
+                              </DropdownMenuItem>
+                            ))}
+                            <DropdownMenuItem onClick={handleCreateFolder}>
+                              <FolderPlus size={12} className="mr-2" />
+                              New folder
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </div>
                   );
                 }
                 return (
-                  <ChatListItem
-                    key={item.id}
-                    chat={item.data as Chat}
-                    users={users}
-                    currentUid={currentUid}
-                    messages={messages[item.id] ?? []}
-                    isActive={activeChatId === item.id}
-                    onClick={() => handleSelectChat(item.id)}
-                  />
+                  <div key={item.id} className="relative group/item">
+                    <ChatListItem
+                      chat={item.data as Chat}
+                      users={users}
+                      currentUid={currentUid}
+                      messages={messages[item.id] ?? []}
+                      isActive={activeChatId === item.id}
+                      onClick={() => handleSelectChat(item.id)}
+                    />
+                    {folders.length > 0 && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-lg opacity-0 group-hover/item:opacity-100 transition-opacity flex items-center justify-center hover:bg-sidebar-accent text-muted-foreground"
+                          >
+                            <MoreHorizontal size={13} />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="end"
+                          className="rounded-xl w-44"
+                        >
+                          <p className="px-2 py-1 text-[10px] text-muted-foreground font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                            <Folder size={9} /> Add to folder
+                          </p>
+                          {folders.map((folder) => (
+                            <DropdownMenuItem
+                              key={folder.id}
+                              onClick={() =>
+                                handleAddToFolder(item.id, folder.id)
+                              }
+                            >
+                              <span
+                                className="w-2 h-2 rounded-full mr-2 flex-shrink-0"
+                                style={{ background: folder.color }}
+                              />
+                              {folder.name}
+                            </DropdownMenuItem>
+                          ))}
+                          <DropdownMenuItem onClick={handleCreateFolder}>
+                            <FolderPlus size={12} className="mr-2" />
+                            New folder
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </div>
                 );
               })}
 
@@ -722,6 +933,9 @@ function ChatListItem({
 
   const time = chat.lastUpdated ? formatTime(chat.lastUpdated) : "";
   const otherMood = getMood(otherUid);
+  const otherNote = getNote(otherUid);
+  const activeStatus = getActiveStatus(other);
+  const activeLabel = getActiveStatusLabel(other);
 
   const isSeen =
     !lastMsg ||
@@ -759,33 +973,48 @@ function ChatListItem({
                 {otherMood.split(" ")[0]}
               </span>
             )}
+            {otherNote && (
+              <span className="text-[9px] text-primary/70 bg-primary/10 px-1.5 py-0.5 rounded-full truncate max-w-[80px] hidden sm:inline">
+                {otherNote}
+              </span>
+            )}
           </div>
           <span className="text-[10px] text-muted-foreground flex-shrink-0">
             {time}
           </span>
         </div>
+        {/* Active status row */}
         <div className="flex items-center gap-1 mt-0.5">
-          {lastMsg?.senderId === currentUid && (
-            <span className="flex-shrink-0">
-              {lastMsg.seenBy.includes(otherUid) ? (
-                <CheckCheck size={11} className="text-primary" />
-              ) : (
-                <Check size={11} className="text-muted-foreground" />
-              )}
+          {activeStatus === "active" ? (
+            <span className="flex items-center gap-1 text-[10px] text-emerald-500 font-medium flex-shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+              {activeLabel}
             </span>
+          ) : (
+            <>
+              {lastMsg?.senderId === currentUid && (
+                <span className="flex-shrink-0">
+                  {lastMsg.seenBy.includes(otherUid) ? (
+                    <CheckCheck size={11} className="text-primary" />
+                  ) : (
+                    <Check size={11} className="text-muted-foreground" />
+                  )}
+                </span>
+              )}
+              <p
+                className={cn(
+                  "text-xs truncate flex-1",
+                  !isSeen
+                    ? "font-semibold text-foreground"
+                    : "text-muted-foreground",
+                )}
+              >
+                {lastMsgText || "Start a conversation"}
+              </p>
+            </>
           )}
-          <p
-            className={cn(
-              "text-xs truncate flex-1",
-              !isSeen
-                ? "font-semibold text-foreground"
-                : "text-muted-foreground",
-            )}
-          >
-            {lastMsgText || "Start a conversation"}
-          </p>
           {unread > 0 && (
-            <span className="flex-shrink-0 min-w-[18px] h-[18px] bg-primary text-primary-foreground rounded-full text-[10px] font-bold flex items-center justify-center px-1 badge-pop">
+            <span className="flex-shrink-0 min-w-[18px] h-[18px] bg-primary text-primary-foreground rounded-full text-[10px] font-bold flex items-center justify-center px-1 badge-pop ml-auto">
               {unread > 9 ? "9+" : unread}
             </span>
           )}
@@ -793,6 +1022,30 @@ function ChatListItem({
             <span className="text-muted-foreground opacity-50 text-xs">🔇</span>
           )}
         </div>
+        {/* When active, still show last message below */}
+        {activeStatus === "active" && (
+          <div className="flex items-center gap-1 mt-0.5">
+            {lastMsg?.senderId === currentUid && (
+              <span className="flex-shrink-0">
+                {lastMsg.seenBy.includes(otherUid) ? (
+                  <CheckCheck size={11} className="text-primary" />
+                ) : (
+                  <Check size={11} className="text-muted-foreground" />
+                )}
+              </span>
+            )}
+            <p
+              className={cn(
+                "text-xs truncate flex-1",
+                !isSeen
+                  ? "font-semibold text-foreground"
+                  : "text-muted-foreground",
+              )}
+            >
+              {lastMsgText || "Start a conversation"}
+            </p>
+          </div>
+        )}
       </div>
     </button>
   );

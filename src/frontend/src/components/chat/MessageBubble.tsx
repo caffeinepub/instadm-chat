@@ -21,9 +21,15 @@ interface MessageBubbleProps {
   onDeleteForEveryone?: () => void;
   onForward: () => void;
   onBookmark?: () => void;
+  onSave?: () => void;
+  onPin?: () => void;
   onReport?: () => void;
   isBookmarked?: boolean;
+  isSaved?: boolean;
+  isPinned?: boolean;
   isLastMessage?: boolean;
+  /** Sender bubble gradient (from chat theme) */
+  senderGradient?: string;
 }
 
 export function MessageBubble({
@@ -39,14 +45,22 @@ export function MessageBubble({
   onDeleteForEveryone,
   onForward,
   onBookmark,
+  onSave,
+  onPin,
   onReport,
   isBookmarked = false,
+  isSaved = false,
+  isPinned = false,
   isLastMessage = false,
+  senderGradient,
 }: MessageBubbleProps) {
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
   } | null>(null);
+  const [showHeart, setShowHeart] = useState(false);
+  const lastTapRef = useRef<number>(0);
+  const heartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleContextMenu = useCallback(
     (e: React.MouseEvent | React.TouchEvent) => {
@@ -65,11 +79,35 @@ export function MessageBubble({
     [],
   );
 
+  // Double-tap heart reaction (mobile: two taps within 300ms)
+  const handleTap = useCallback(
+    (e: React.MouseEvent | React.TouchEvent) => {
+      const now = Date.now();
+      if (now - lastTapRef.current < 300) {
+        // Double tap!
+        e.preventDefault();
+        onReact("❤️");
+        setShowHeart(true);
+        if (heartTimerRef.current) clearTimeout(heartTimerRef.current);
+        heartTimerRef.current = setTimeout(() => setShowHeart(false), 700);
+      }
+      lastTapRef.current = now;
+    },
+    [onReact],
+  );
+
   // Hidden for this user
   if (message.deletedFor.includes(currentUid)) return null;
 
   const isDeleted = message.deletedForEveryone;
   const hasReactions = Object.keys(message.reactions).length > 0;
+
+  // Detect forwarded message — text starts with "[Forwarded from @username]"
+  const forwardMatch = message.text?.match(/^\[Forwarded from @([^\]]+)\]\n?/);
+  const forwardedFrom = forwardMatch ? forwardMatch[1] : null;
+  const displayText = forwardedFrom
+    ? message.text.replace(/^\[Forwarded from @[^\]]+\]\n?/, "")
+    : message.text;
 
   // Message status
   const otherParticipants = participants.filter((p) => p.uid !== currentUid);
@@ -116,24 +154,61 @@ export function MessageBubble({
             </div>
           )}
 
+          {/* Forwarded header — shown above the bubble */}
+          {forwardedFrom && !isDeleted && (
+            <div
+              className={cn(
+                "flex items-center gap-1.5 mb-1 px-1",
+                isSender ? "justify-end" : "justify-start",
+              )}
+            >
+              <span className="text-[10px] text-muted-foreground">↪</span>
+              <span className="text-[10px] text-muted-foreground italic">
+                Forwarded from{" "}
+                <span className="font-semibold text-primary/80">
+                  @{forwardedFrom}
+                </span>
+              </span>
+            </div>
+          )}
+
           {/* Main bubble */}
-          <div
+          <button
+            type="button"
             className={cn(
-              "relative cursor-pointer select-none",
+              "relative cursor-pointer select-none text-left",
               isSender ? "bubble-sender" : "bubble-receiver",
               isDeleted && "opacity-60",
             )}
+            style={
+              isSender && senderGradient
+                ? { background: senderGradient }
+                : undefined
+            }
             onContextMenu={handleContextMenu}
-            onDoubleClick={handleContextMenu}
+            onDoubleClick={handleTap}
+            onClick={handleTap}
           >
+            {/* Heart animation overlay */}
+            {showHeart && (
+              <div
+                className="absolute inset-0 flex items-center justify-center pointer-events-none z-10"
+                style={{ animation: "heartPop 0.7s ease-out forwards" }}
+              >
+                <span className="text-3xl">❤️</span>
+              </div>
+            )}
             {isDeleted ? (
               <p className="italic text-sm px-4 py-2.5 opacity-80">
                 This message was deleted
               </p>
             ) : (
-              <BubbleContent message={message} isSender={isSender} />
+              <BubbleContent
+                message={{ ...message, text: displayText ?? message.text }}
+                isSender={isSender}
+              />
             )}
-          </div>
+          </button>
 
           {/* Reactions */}
           {hasReactions && (
@@ -216,6 +291,8 @@ export function MessageBubble({
           isSender={isSender}
           isOptimistic={message.id.startsWith("optimistic_")}
           isBookmarked={isBookmarked}
+          isSaved={isSaved}
+          isPinned={isPinned}
           onReact={onReact}
           onReply={onReply}
           onEdit={onEdit}
@@ -223,6 +300,8 @@ export function MessageBubble({
           onDeleteForEveryone={isSender ? onDeleteForEveryone : undefined}
           onForward={onForward}
           onBookmark={onBookmark}
+          onSave={onSave}
+          onPin={onPin}
           onReport={!isSender ? onReport : undefined}
           onClose={() => setContextMenu(null)}
         />

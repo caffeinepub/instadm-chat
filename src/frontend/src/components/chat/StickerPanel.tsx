@@ -19,26 +19,39 @@ export const STICKER_PREFIX = "[sticker]";
 interface StickerPanelProps {
   onStickerSelect: (sticker: string) => void;
   className?: string;
+  /** When true, renders a compact round icon button for use inside attach menu */
+  compact?: boolean;
 }
 
 export function StickerPanel({
   onStickerSelect,
   className,
+  compact,
 }: StickerPanelProps) {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className={cn(
-            "text-muted-foreground hover:text-primary flex-shrink-0 h-10 w-10 rounded-xl transition-colors",
-            className,
-          )}
-          title="Stickers"
-        >
-          <Smile size={18} />
-        </Button>
+        {compact ? (
+          <button
+            type="button"
+            className="w-9 h-9 rounded-full bg-pink-500/15 flex items-center justify-center hover:bg-pink-500/25 transition-colors"
+            title="Stickers"
+          >
+            <Smile size={17} className="text-pink-500" />
+          </button>
+        ) : (
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn(
+              "text-muted-foreground hover:text-primary flex-shrink-0 h-10 w-10 rounded-xl transition-colors",
+              className,
+            )}
+            title="Stickers"
+          >
+            <Smile size={18} />
+          </Button>
+        )}
       </PopoverTrigger>
       <PopoverContent align="end" side="top" className="w-72 rounded-2xl p-2">
         <Tabs defaultValue="Animals">

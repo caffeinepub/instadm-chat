@@ -8,34 +8,48 @@ import {
   ArrowLeft,
   Heart,
   Image,
+  Loader2,
   MessageCircle,
+  RefreshCw,
   Send,
   Sparkles,
   X,
 } from "lucide-react";
 import type React from "react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useAuth } from "../contexts/AuthContext";
+import { useActor } from "../hooks/useActor";
+import {
+  buildBioWithPayload,
+  decodePostsFromBio,
+  decodeStoriesFromBio,
+  extractPlainBio,
+  mergeAllPosts,
+} from "../services/bioStorageService";
 import {
   type Post,
   addPostComment,
   awardBadge,
   createPost,
   extractHashtags,
+  getActiveStories,
   getMood,
   getPosts,
+  savePosts,
   togglePostLike,
 } from "../services/featureService";
 
 export function FeedPage() {
   const { currentUser } = useAuth();
+  const { actor } = useActor();
   const navigate = useNavigate();
   const [posts, setPosts] = useState<Post[]>([]);
   const [postText, setPostText] = useState("");
   const [postImageUrl, setPostImageUrl] = useState("");
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isPosting, setIsPosting] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [expandedComments, setExpandedComments] = useState<Set<string>>(
     new Set(),
   );
@@ -43,6 +57,7 @@ export function FeedPage() {
     {},
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Enable scrolling
   useEffect(() => {
@@ -54,9 +69,96 @@ export function FeedPage() {
     };
   }, []);
 
+  // ─── Load global feed from ALL users via ICP ────────────────────────────────
+  const loadGlobalFeed = useCallback(
+    async (silent = false) => {
+      if (!silent) setIsRefreshing(true);
+      try {
+        // Always include local posts first (most up-to-date for current user)
+        const localPosts = getPosts();
+
+        if (actor) {
+          // Fetch all users from ICP backend
+          const allUsers = await actor.searchUsersByUsername("");
+          const postsPerUser: Post[][] = [localPosts];
+
+          // Decode posts from each user's bio
+          for (const profile of allUsers) {
+            const uid = profile._id?.toString();
+            if (!uid || uid === currentUser?.uid) continue;
+            const rawBio = profile.bio ?? "";
+            const userPosts = decodePostsFromBio(rawBio);
+            if (userPosts.length > 0) {
+              postsPerUser.push(userPosts);
+            }
+          }
+
+          const merged = mergeAllPosts(postsPerUser);
+          setPosts(merged);
+        } else {
+          setPosts(localPosts);
+        }
+      } catch {
+        // Fallback to local posts
+        setPosts(getPosts());
+      } finally {
+        if (!silent) setIsRefreshing(false);
+      }
+    },
+    [actor, currentUser?.uid],
+  );
+
+  // Initial load + periodic refresh every 8 seconds
   useEffect(() => {
-    setPosts(getPosts());
-  }, []);
+    loadGlobalFeed(false);
+
+    refreshTimerRef.current = setInterval(() => {
+      loadGlobalFeed(true);
+    }, 8000);
+
+    return () => {
+      if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
+    };
+  }, [loadGlobalFeed]);
+
+  // BroadcastChannel for same-browser real-time sync across tabs
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const channel = new BroadcastChannel("linkr_feed_updates");
+    channel.onmessage = () => {
+      loadGlobalFeed(true);
+    };
+    return () => channel.close();
+  }, [loadGlobalFeed]);
+
+  // ─── Save current user's posts to ICP bio ────────────────────────────────────
+  const savePostsToBio = useCallback(
+    async (updatedPosts: Post[]) => {
+      if (!actor || !currentUser) return;
+      try {
+        const callerProfile = await actor.getCallerUserProfile();
+        if (!callerProfile) return;
+
+        const plainBio = extractPlainBio(callerProfile.bio ?? "");
+        const activeStories = getActiveStories().filter(
+          (s) => s.authorId === currentUser.uid,
+        );
+        const newBio = buildBioWithPayload(
+          plainBio,
+          updatedPosts,
+          activeStories,
+        );
+
+        await actor.saveCallerUserProfile({
+          ...callerProfile,
+          bio: newBio,
+        });
+      } catch {
+        // Non-fatal — posts are still saved locally
+      }
+    },
+    [actor, currentUser],
+  );
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -75,7 +177,7 @@ export function FeedPage() {
     setIsPosting(true);
     try {
       const hashtags = extractHashtags(postText);
-      createPost({
+      const newPost = createPost({
         authorId: currentUser.uid,
         authorUsername: currentUser.username,
         authorAvatar: currentUser.profilePicture || "",
@@ -84,7 +186,8 @@ export function FeedPage() {
         hashtags,
         createdAt: Date.now(),
       });
-      setPosts(getPosts());
+      const updatedPosts = getPosts();
+      setPosts(updatedPosts);
       setPostText("");
       setPostImageUrl("");
       setImagePreview(null);
@@ -94,6 +197,19 @@ export function FeedPage() {
       if (awarded) {
         toast.success("📝 Badge Earned: Content Creator!");
       }
+
+      // Save posts to ICP bio for cross-device visibility
+      savePostsToBio(updatedPosts);
+
+      // Broadcast to other tabs on same browser
+      if (typeof BroadcastChannel !== "undefined") {
+        const channel = new BroadcastChannel("linkr_feed_updates");
+        channel.postMessage({ type: "new_post", postId: newPost.id });
+        channel.close();
+      }
+
+      // Reload feed to show merged global feed
+      setTimeout(() => loadGlobalFeed(true), 1000);
     } finally {
       setIsPosting(false);
     }
@@ -102,7 +218,15 @@ export function FeedPage() {
   const handleLike = (postId: string) => {
     if (!currentUser) return;
     const updated = togglePostLike(postId, currentUser.uid);
-    setPosts(updated);
+    // Merge local update into displayed feed
+    setPosts((prev) =>
+      prev.map((p) => {
+        const local = updated.find((u) => u.id === p.id);
+        return local ?? p;
+      }),
+    );
+    // Save updated likes to bio
+    savePostsToBio(getPosts());
   };
 
   const handleComment = (postId: string) => {
@@ -115,8 +239,14 @@ export function FeedPage() {
       text,
       createdAt: Date.now(),
     });
-    setPosts(updated);
+    setPosts((prev) =>
+      prev.map((p) => {
+        const local = updated.find((u) => u.id === p.id);
+        return local ?? p;
+      }),
+    );
     setCommentInputs((prev) => ({ ...prev, [postId]: "" }));
+    savePostsToBio(getPosts());
   };
 
   const toggleComments = (postId: string) => {
@@ -157,10 +287,11 @@ export function FeedPage() {
           size="icon"
           className="rounded-xl w-9 h-9 flex-shrink-0"
           onClick={() => navigate({ to: "/" })}
+          data-ocid="feed.back.button"
         >
           <ArrowLeft size={18} />
         </Button>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-1">
           <Sparkles size={18} className="text-primary" />
           <h1
             className="font-bold text-lg tracking-tight"
@@ -169,6 +300,24 @@ export function FeedPage() {
             Feed
           </h1>
         </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="rounded-xl w-9 h-9"
+          onClick={() => loadGlobalFeed(false)}
+          disabled={isRefreshing}
+          title="Refresh feed"
+          data-ocid="feed.refresh.button"
+        >
+          <RefreshCw
+            size={16}
+            className={
+              isRefreshing
+                ? "animate-spin text-primary"
+                : "text-muted-foreground"
+            }
+          />
+        </Button>
       </div>
 
       <div className="max-w-lg mx-auto pb-10">
@@ -190,6 +339,7 @@ export function FeedPage() {
                     placeholder={`Share something, ${currentUser.username}... Use #hashtags`}
                     className="min-h-[80px] resize-none border-0 bg-transparent p-0 text-sm focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-muted-foreground/60"
                     maxLength={1000}
+                    data-ocid="feed.post.textarea"
                   />
                   {imagePreview && (
                     <div className="relative mt-2 inline-block">
@@ -219,6 +369,7 @@ export function FeedPage() {
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-accent transition-colors text-muted-foreground text-xs font-medium"
+                    data-ocid="feed.photo.button"
                   >
                     <Image size={14} className="text-primary" />
                     Photo
@@ -236,8 +387,13 @@ export function FeedPage() {
                   className="rounded-xl gradient-btn gap-1.5 h-8 px-4"
                   onClick={handlePost}
                   disabled={!postText.trim() || isPosting}
+                  data-ocid="feed.post.submit_button"
                 >
-                  <Send size={13} className="text-white" />
+                  {isPosting ? (
+                    <Loader2 size={13} className="text-white animate-spin" />
+                  ) : (
+                    <Send size={13} className="text-white" />
+                  )}
                   <span className="text-white text-xs font-semibold">Post</span>
                 </Button>
               </div>
@@ -245,9 +401,22 @@ export function FeedPage() {
           </div>
         )}
 
+        {/* Loading state */}
+        {isRefreshing && posts.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-16 gap-3">
+            <Loader2 size={24} className="text-primary animate-spin" />
+            <p className="text-sm text-muted-foreground">
+              Loading feed from all users...
+            </p>
+          </div>
+        )}
+
         {/* Posts list */}
-        {posts.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-4 px-8">
+        {!isRefreshing && posts.length === 0 ? (
+          <div
+            className="flex flex-col items-center justify-center py-20 gap-4 px-8"
+            data-ocid="feed.empty_state"
+          >
             <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center">
               <Sparkles
                 size={28}
@@ -263,8 +432,8 @@ export function FeedPage() {
             </div>
           </div>
         ) : (
-          <div className="space-y-0">
-            {posts.map((post) => {
+          <div className="space-y-0" data-ocid="feed.list">
+            {posts.map((post, idx) => {
               const isLiked =
                 currentUser && post.likes.includes(currentUser.uid);
               const showComments = expandedComments.has(post.id);
@@ -274,6 +443,7 @@ export function FeedPage() {
                 <div
                   key={post.id}
                   className="border-b border-border/50 last:border-b-0"
+                  data-ocid={`feed.post.item.${idx + 1}`}
                 >
                   {/* Post header */}
                   <div className="flex items-center gap-3 px-4 pt-4 pb-2">
@@ -340,6 +510,7 @@ export function FeedPage() {
                       type="button"
                       onClick={() => handleLike(post.id)}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl hover:bg-accent transition-colors"
+                      data-ocid={`feed.post.like.button.${idx + 1}`}
                     >
                       <Heart
                         size={16}
@@ -357,6 +528,7 @@ export function FeedPage() {
                       type="button"
                       onClick={() => toggleComments(post.id)}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl hover:bg-accent transition-colors"
+                      data-ocid={`feed.post.comment.button.${idx + 1}`}
                     >
                       <MessageCircle
                         size={16}
@@ -422,12 +594,14 @@ export function FeedPage() {
                               }}
                               placeholder="Add a comment..."
                               className="flex-1 bg-card border border-border rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-primary/50 transition-colors"
+                              data-ocid={`feed.post.comment.input.${idx + 1}`}
                             />
                             <Button
                               size="sm"
                               variant="ghost"
                               className="h-8 w-8 p-0 rounded-xl hover:bg-primary/10"
                               onClick={() => handleComment(post.id)}
+                              data-ocid={`feed.post.comment.submit_button.${idx + 1}`}
                             >
                               <Send size={13} className="text-primary" />
                             </Button>

@@ -42,12 +42,17 @@ import {
   Mic,
   MicOff,
   MoreHorizontal,
+  Palette,
   Pin,
+  Plus,
   Search,
   Send,
+  Smile,
   Square,
   Timer,
+  Undo2,
   VolumeX,
+  X,
   Zap,
 } from "lucide-react";
 import React, {
@@ -63,21 +68,32 @@ import { useChat } from "../../contexts/ChatContext";
 import { useActor } from "../../hooks/useActor";
 import { saveUser } from "../../services/chatService";
 import {
+  CHAT_THEMES,
+  type PinnedMessage,
   type Poll,
   type Report,
   addBookmark,
   addReport,
   addScheduledMessage,
   awardBadge,
+  getChatTheme,
   getChatWallpaper,
   getDueMessages,
+  getPinnedMessage,
   getPollsForChat,
   incrementMsgCount,
   isBookmarked,
+  isMessageSaved,
   recordDailyActivity,
   removeBookmark,
   removeScheduledMessage,
+  saveMessage,
+  setChatTheme,
+  setPinnedMessage,
   setSelfDestructTimer,
+  shouldShowLastSeen,
+  unsaveMessage,
+  votePoll,
 } from "../../services/featureService";
 import { backendProfileToAppUser } from "../../services/profileService";
 import type { Message } from "../../types";
@@ -160,6 +176,18 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
   // Batch 3 features
   const [showTodoPanel, setShowTodoPanel] = useState(false);
   const [linkPreviewUrl, setLinkPreviewUrl] = useState<string | null>(null);
+  // Batch 4 features
+  const [pinnedMsg, setPinnedMsg] = useState<PinnedMessage | null>(() =>
+    getPinnedMessage(chatId),
+  );
+  const [chatTheme, setChatThemeState] = useState(() => getChatTheme(chatId));
+  const [savedVersion, setSavedVersion] = useState(0); // trigger re-render
+  const [showThemePicker, setShowThemePicker] = useState(false);
+  // Attachment popover (the [+] button)
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  // Undo send
+  const [undoMsgId, setUndoMsgId] = useState<string | null>(null);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const linkPreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -289,6 +317,11 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
   const isBlockedByOther =
     otherUser?.blockedUsers?.includes(currentUid) || false;
 
+  // Chat theme gradient for sender bubbles
+  const senderGradient =
+    CHAT_THEMES.find((t) => t.id === chatTheme)?.gradient ??
+    "linear-gradient(135deg, #E1306C, #833AB4)";
+
   // Mark as seen when window opens or new messages arrive
   // biome-ignore lint/correctness/useExhaustiveDependencies: length-only dep is intentional
   useEffect(() => {
@@ -312,6 +345,7 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
       }
       if (linkPreviewTimerRef.current)
         clearTimeout(linkPreviewTimerRef.current);
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
     };
   }, []);
 
@@ -330,10 +364,47 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
     return () => timers.forEach(clearTimeout);
   }, [chat?.vanishMode, chatMessages, chatId, deleteMessageForEveryone]);
 
-  // Load polls for this chat
+  // Load polls for this chat — and derive live votes from the message stream
+  // Votes are encoded as messages starting with __POLL_VOTE__:pollId:optionIndex:voterUid
+  // This allows real-time vote syncing via the existing 500ms message polling.
+  const livePollsWithVotes = useMemo(() => {
+    const base = chatPolls;
+    if (base.length === 0) return base;
+
+    // Build derived votes map from messages
+    const derivedVotes: Record<string, Record<string, number>> = {};
+    for (const msg of chatMessages) {
+      if (msg.text?.startsWith("__POLL_VOTE__:") && !msg.deletedForEveryone) {
+        const parts = msg.text.split(":");
+        // format: __POLL_VOTE__:pollId:optionIndex:voterUid
+        if (parts.length >= 4) {
+          const pollId = parts[1];
+          const optionIndex = Number.parseInt(parts[2], 10);
+          const voterUid = parts[3];
+          if (!Number.isNaN(optionIndex)) {
+            if (!derivedVotes[pollId]) derivedVotes[pollId] = {};
+            // Later votes override earlier ones (last-write-wins per voter)
+            derivedVotes[pollId][voterUid] = optionIndex;
+          }
+        }
+      }
+    }
+
+    if (Object.keys(derivedVotes).length === 0) return base;
+
+    return base.map((poll) => {
+      const liveVotes = derivedVotes[poll.id];
+      if (!liveVotes) return poll;
+      // Merge: liveVotes (from messages) override localStorage votes
+      return { ...poll, votes: { ...poll.votes, ...liveVotes } };
+    });
+  }, [chatPolls, chatMessages]);
+
+  // Re-load polls when chat changes or messages update (to pick up new polls sent by either user)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: chatMessages.length is intentional trigger
   useEffect(() => {
     setChatPolls(getPollsForChat(chatId));
-  }, [chatId]);
+  }, [chatId, chatMessages.length]);
 
   // Formatting helpers
   const wrapSelectedText = useCallback(
@@ -401,6 +472,13 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
             deleteMessageForEveryone(chatId, msg.id).catch(() => {});
           }, selfDestructDelay);
         }
+
+        // Undo send — show for 5 seconds
+        setUndoMsgId(msg.id);
+        if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+        undoTimerRef.current = setTimeout(() => {
+          setUndoMsgId(null);
+        }, 5000);
       } catch {
         toast.error("Failed to send message");
       } finally {
@@ -454,6 +532,82 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
       setBookmarkVersion((v) => v + 1);
     },
     [currentUid, chatId, users],
+  );
+
+  // Save/unsave message handler
+  const handleSaveMessage = useCallback(
+    (msg: Message) => {
+      if (isMessageSaved(currentUid, msg.id)) {
+        unsaveMessage(currentUid, msg.id);
+        toast.success("Message unsaved");
+      } else {
+        saveMessage(currentUid, {
+          id: `saved_${Date.now()}`,
+          text: msg.text,
+          mediaUrl: msg.mediaUrl,
+          messageType: msg.messageType,
+          createdAt: msg.createdAt,
+          savedAt: Date.now(),
+          sourceMessageId: msg.id,
+          sourceChatId: chatId,
+          senderUsername: users[msg.senderId]?.username,
+        });
+        toast.success("Message saved");
+      }
+      setSavedVersion((v) => v + 1);
+    },
+    [currentUid, chatId, users],
+  );
+
+  // Pin/unpin message handler
+  const handlePinMessage = useCallback(
+    (msg: Message) => {
+      const existing = getPinnedMessage(chatId);
+      if (existing?.messageId === msg.id) {
+        setPinnedMessage(chatId, null);
+        setPinnedMsg(null);
+        toast.success("Message unpinned");
+      } else {
+        const pin: PinnedMessage = {
+          messageId: msg.id,
+          text: msg.text || `📎 ${msg.messageType}`,
+          senderId: msg.senderId,
+          pinnedAt: Date.now(),
+        };
+        setPinnedMessage(chatId, pin);
+        setPinnedMsg(pin);
+        toast.success("Message pinned");
+      }
+    },
+    [chatId],
+  );
+
+  // Chat theme handler
+  const handleThemeChange = useCallback(
+    (themeId: (typeof CHAT_THEMES)[number]["id"]) => {
+      setChatTheme(chatId, themeId);
+      setChatThemeState(themeId);
+      setShowThemePicker(false);
+    },
+    [chatId],
+  );
+
+  // Poll vote handler — sends a hidden vote message for real-time sync
+  const handlePollVote = useCallback(
+    (pollId: string, optionIndex: number) => {
+      // Encode vote as a hidden message: __POLL_VOTE__:pollId:optionIndex:voterUid
+      const voteText = `__POLL_VOTE__:${pollId}:${optionIndex}:${currentUid}`;
+      sendMessage(chatId, currentUid, voteText, "text", {}).catch(() => {});
+      // Also update localStorage poll immediately for instant local feedback
+      const updated = votePoll(pollId, currentUid, optionIndex);
+      const updatedPoll = updated[pollId];
+      if (updatedPoll) {
+        setChatPolls((prev) =>
+          prev.map((p) => (p.id === pollId ? updatedPoll : p)),
+        );
+      }
+    },
+    [chatId, currentUid, sendMessage],
   );
 
   // Schedule send handler
@@ -652,7 +806,9 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
   const isMuted = chat?.muted[currentUid] ?? false;
 
   const visibleMessages = chatMessages.filter(
-    (m) => !m.deletedFor.includes(currentUid),
+    (m) =>
+      !m.deletedFor.includes(currentUid) &&
+      !m.text?.startsWith("__POLL_VOTE__:"), // hide poll vote sync messages
   );
 
   const filteredMessages = searchQuery
@@ -676,8 +832,11 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
     return `${m}:${String(s).padStart(2, "0")}`;
   };
 
-  // Show loading state while chat/user resolves (with a max wait)
-  if (!chat || !otherUser) {
+  // Show loading state only when BOTH chat AND otherUid are missing.
+  // If we have otherUid (from pendingChatContext or chatIdToOtherUid map),
+  // render the chat immediately — don't wait for chats state to settle.
+  const canRender = otherUid || chat;
+  if (!canRender || !otherUser) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-background gap-4 relative">
         {onBack && (
@@ -747,7 +906,9 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
     );
   }
 
-  const participants = chat.participants
+  const participants = (
+    chat?.participants ?? [currentUid, otherUid].filter(Boolean)
+  )
     .map((uid) => users[uid])
     .filter(Boolean);
 
@@ -789,8 +950,14 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
                   <span className="w-1.5 h-1.5 rounded-full bg-online-dot inline-block" />
                   Active now
                 </span>
+              ) : shouldShowLastSeen(
+                  otherUid,
+                  currentUid,
+                  currentUser?.following ?? [],
+                ) ? (
+                `Active ${formatLastSeen(otherUser.lastSeen)}`
               ) : (
-                `Last seen ${formatLastSeen(otherUser.lastSeen)}`
+                <span className="text-muted-foreground/50">—</span>
               )}
             </p>
           </div>
@@ -802,28 +969,34 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
             size="icon"
             onClick={() => setSearchOpen((v) => !v)}
             className={cn("w-9 h-9", searchOpen && "bg-accent")}
+            data-ocid="chat.search_input"
           >
             <Search size={17} />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setShowMediaGallery(true)}
-            className="w-9 h-9"
-            title="Shared Media"
-          >
-            <Images size={17} />
-          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="w-9 h-9">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="w-9 h-9"
+                data-ocid="chat.dropdown_menu"
+              >
                 <MoreHorizontal size={17} />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="end"
-              className="rounded-xl overflow-hidden p-0"
+              className="rounded-xl overflow-hidden p-0 w-52"
             >
+              <DropdownMenuItem onClick={() => setShowMediaGallery(true)}>
+                <Images size={14} className="mr-2" />
+                Shared Media
+              </DropdownMenuItem>
+              {/* Chat theme inline */}
+              <DropdownMenuItem onClick={() => setShowThemePicker((v) => !v)}>
+                <Palette size={14} className="mr-2" />
+                Chat Theme
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => togglePin(chatId, currentUid)}>
                 <Pin size={14} className="mr-2" />
                 {isPinned ? "Unpin chat" : "Pin chat"}
@@ -840,7 +1013,7 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => toggleVanishMode(chatId)}>
                 <Zap size={14} className="mr-2" />
-                {chat.vanishMode
+                {chat?.vanishMode
                   ? "Turn off vanish mode"
                   : "Turn on vanish mode"}
               </DropdownMenuItem>
@@ -856,6 +1029,38 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+
+        {/* Chat theme picker popover — detached so it can be triggered from dropdown */}
+        <Popover open={showThemePicker} onOpenChange={setShowThemePicker}>
+          <PopoverTrigger asChild>
+            <span className="sr-only">Theme trigger</span>
+          </PopoverTrigger>
+          <PopoverContent
+            align="end"
+            side="bottom"
+            className="w-64 rounded-2xl p-3"
+          >
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+              Chat Theme
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {CHAT_THEMES.map((theme) => (
+                <button
+                  key={theme.id}
+                  type="button"
+                  onClick={() => handleThemeChange(theme.id)}
+                  title={theme.name}
+                  className={cn(
+                    "w-8 h-8 rounded-full transition-all flex-shrink-0",
+                    chatTheme === theme.id &&
+                      "ring-2 ring-offset-2 ring-primary scale-110",
+                  )}
+                  style={{ background: theme.gradient }}
+                />
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
 
       {/* Search bar */}
@@ -871,8 +1076,45 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
         </div>
       )}
 
+      {/* Pinned message banner */}
+      {pinnedMsg && (
+        <button
+          type="button"
+          className="pinned-banner w-full text-left"
+          onClick={() => {
+            // Scroll to pinned message
+            const el = document.querySelector(
+              `[data-msg-id="${pinnedMsg.messageId}"]`,
+            );
+            if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+          }}
+        >
+          <Pin size={11} className="text-primary flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <span className="text-[10px] text-primary font-semibold uppercase tracking-wider mr-1">
+              Pinned
+            </span>
+            <span className="text-xs text-muted-foreground truncate">
+              {pinnedMsg.text.slice(0, 60)}
+              {pinnedMsg.text.length > 60 ? "…" : ""}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="flex-shrink-0 text-muted-foreground hover:text-foreground p-0.5"
+            onClick={(e) => {
+              e.stopPropagation();
+              setPinnedMessage(chatId, null);
+              setPinnedMsg(null);
+            }}
+          >
+            <X size={11} />
+          </button>
+        </button>
+      )}
+
       {/* Vanish mode indicator */}
-      {chat.vanishMode && (
+      {chat?.vanishMode && (
         <div className="flex items-center justify-center gap-2 py-2 bg-primary/5 border-b border-border">
           <Zap size={12} className="text-primary" />
           <span className="text-xs text-primary font-medium">
@@ -903,7 +1145,7 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
         className="flex-1 overflow-y-auto chat-scroll py-2 chat-messages-bg"
         style={wallpaper ? { background: wallpaper } : undefined}
       >
-        {filteredMessages.length === 0 && (
+        {filteredMessages.length === 0 && livePollsWithVotes.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full gap-3 py-12">
             <UserAvatar
               src={otherUser.profilePicture}
@@ -925,101 +1167,188 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
           </div>
         )}
 
-        {/* Polls for this chat */}
-        {chatPolls.map((poll) => (
-          <div
-            key={poll.id}
-            className={cn(
-              "flex items-end gap-2 px-4 py-1",
-              poll.createdBy === currentUid ? "flex-row-reverse" : "flex-row",
-            )}
-          >
-            <PollBubble
-              poll={poll}
-              currentUid={currentUid}
-              isSender={poll.createdBy === currentUid}
-            />
-          </div>
-        ))}
+        {/* Render messages and polls in chronological order */}
+        {(() => {
+          // Build a unified timeline item list
+          type TimelineItem =
+            | {
+                kind: "message";
+                msg: (typeof filteredMessages)[0];
+                idx: number;
+              }
+            | { kind: "poll"; poll: (typeof livePollsWithVotes)[0] };
 
-        {filteredMessages.map((msg, idx) => {
-          const prevMsg = filteredMessages[idx - 1];
-          const showDateSep =
-            !prevMsg ||
-            new Date(msg.createdAt).toDateString() !==
-              new Date(prevMsg.createdAt).toDateString();
+          const timeline: TimelineItem[] = [
+            ...filteredMessages.map((msg, idx) => ({
+              kind: "message" as const,
+              msg,
+              idx,
+            })),
+            ...livePollsWithVotes.map((poll) => ({
+              kind: "poll" as const,
+              poll,
+            })),
+          ].sort((a, b) => {
+            const ta =
+              a.kind === "message" ? a.msg.createdAt : a.poll.createdAt;
+            const tb =
+              b.kind === "message" ? b.msg.createdAt : b.poll.createdAt;
+            return ta - tb;
+          });
 
-          const replyMsg = msg.replyTo
-            ? chatMessages.find((m) => m.id === msg.replyTo)
-            : undefined;
+          let prevDate: string | null = null;
 
-          const isLastSent = msg.senderId === currentUid && idx === lastSentIdx;
+          return timeline.map((item) => {
+            const itemDate =
+              item.kind === "message"
+                ? new Date(item.msg.createdAt).toDateString()
+                : new Date(item.poll.createdAt).toDateString();
+            const showDateSep = prevDate !== itemDate;
+            prevDate = itemDate;
+            const createdAt =
+              item.kind === "message"
+                ? item.msg.createdAt
+                : item.poll.createdAt;
 
-          return (
-            <React.Fragment key={msg.id}>
-              {showDateSep && (
-                <div className="flex items-center gap-3 px-4 py-2">
-                  <Separator className="flex-1" />
-                  <span className="text-xs text-muted-foreground">
-                    {new Date(msg.createdAt).toLocaleDateString([], {
-                      month: "short",
-                      day: "numeric",
-                    })}
-                  </span>
-                  <Separator className="flex-1" />
+            if (item.kind === "poll") {
+              return (
+                <React.Fragment key={`poll_${item.poll.id}`}>
+                  {showDateSep && (
+                    <div className="flex items-center gap-3 px-4 py-2">
+                      <Separator className="flex-1" />
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(createdAt).toLocaleDateString([], {
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </span>
+                      <Separator className="flex-1" />
+                    </div>
+                  )}
+                  <div
+                    className={cn(
+                      "flex items-end gap-2 px-4 py-1",
+                      item.poll.createdBy === currentUid
+                        ? "flex-row-reverse"
+                        : "flex-row",
+                    )}
+                  >
+                    <PollBubble
+                      poll={item.poll}
+                      currentUid={currentUid}
+                      isSender={item.poll.createdBy === currentUid}
+                      onVote={handlePollVote}
+                    />
+                  </div>
+                </React.Fragment>
+              );
+            }
+
+            const { msg, idx } = item;
+            const replyMsg = msg.replyTo
+              ? chatMessages.find((m) => m.id === msg.replyTo)
+              : undefined;
+            const isLastSent =
+              msg.senderId === currentUid && idx === lastSentIdx;
+
+            return (
+              <React.Fragment key={msg.id}>
+                {showDateSep && (
+                  <div className="flex items-center gap-3 px-4 py-2">
+                    <Separator className="flex-1" />
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(msg.createdAt).toLocaleDateString([], {
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </span>
+                    <Separator className="flex-1" />
+                  </div>
+                )}
+                <div data-msg-id={msg.id}>
+                  <MessageBubble
+                    message={msg}
+                    isSender={msg.senderId === currentUid}
+                    currentUid={currentUid}
+                    senderUser={users[msg.senderId]}
+                    replyToMessage={replyMsg}
+                    participants={participants}
+                    senderGradient={senderGradient}
+                    onReact={(emoji) =>
+                      reactToMessage(chatId, msg.id, emoji, currentUid)
+                    }
+                    onReply={() => setReplyToMessage(msg)}
+                    onEdit={
+                      msg.senderId === currentUid
+                        ? () => {
+                            setEditingMessage(msg);
+                            setInputText(msg.text);
+                            inputRef.current?.focus();
+                          }
+                        : undefined
+                    }
+                    onDeleteForMe={() =>
+                      deleteMessageForMe(chatId, msg.id, currentUid)
+                    }
+                    onDeleteForEveryone={
+                      msg.senderId === currentUid
+                        ? () => deleteMessageForEveryone(chatId, msg.id)
+                        : undefined
+                    }
+                    onForward={() => {
+                      setForwardingMessage(msg);
+                      setShowForwardModal(true);
+                    }}
+                    onBookmark={() => handleBookmark(msg)}
+                    isBookmarked={
+                      bookmarkVersion >= 0 && isBookmarked(currentUid, msg.id)
+                    }
+                    onSave={() => handleSaveMessage(msg)}
+                    isSaved={
+                      savedVersion >= 0 && isMessageSaved(currentUid, msg.id)
+                    }
+                    onPin={() => handlePinMessage(msg)}
+                    isPinned={pinnedMsg?.messageId === msg.id}
+                    onReport={
+                      msg.senderId !== currentUid
+                        ? () => setReportingMessage(msg)
+                        : undefined
+                    }
+                    isLastMessage={isLastSent}
+                  />
                 </div>
-              )}
-              <MessageBubble
-                message={msg}
-                isSender={msg.senderId === currentUid}
-                currentUid={currentUid}
-                senderUser={users[msg.senderId]}
-                replyToMessage={replyMsg}
-                participants={participants}
-                onReact={(emoji) =>
-                  reactToMessage(chatId, msg.id, emoji, currentUid)
-                }
-                onReply={() => setReplyToMessage(msg)}
-                onEdit={
-                  msg.senderId === currentUid
-                    ? () => {
-                        setEditingMessage(msg);
-                        setInputText(msg.text);
-                        inputRef.current?.focus();
-                      }
-                    : undefined
-                }
-                onDeleteForMe={() =>
-                  deleteMessageForMe(chatId, msg.id, currentUid)
-                }
-                onDeleteForEveryone={
-                  msg.senderId === currentUid
-                    ? () => deleteMessageForEveryone(chatId, msg.id)
-                    : undefined
-                }
-                onForward={() => {
-                  setForwardingMessage(msg);
-                  setShowForwardModal(true);
-                }}
-                onBookmark={() => handleBookmark(msg)}
-                isBookmarked={
-                  bookmarkVersion >= 0 && isBookmarked(currentUid, msg.id)
-                }
-                onReport={
-                  msg.senderId !== currentUid
-                    ? () => setReportingMessage(msg)
-                    : undefined
-                }
-                isLastMessage={isLastSent}
-              />
-            </React.Fragment>
-          );
-        })}
+              </React.Fragment>
+            );
+          });
+        })()}
 
         {/* Typing indicator */}
         {isOtherTyping && <TypingIndicator user={otherUser} />}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Undo send banner */}
+      {undoMsgId && (
+        <div className="undo-banner flex items-center gap-3 px-4 py-2 border-t border-border bg-muted/30">
+          <span className="text-xs text-muted-foreground flex-1">
+            Message sent
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+              const msgId = undoMsgId;
+              setUndoMsgId(null);
+              deleteMessageForEveryone(chatId, msgId).catch(() => {});
+              toast.success("Message unsent");
+            }}
+            className="flex items-center gap-1.5 text-xs font-semibold text-primary hover:opacity-80 transition-opacity"
+          >
+            <Undo2 size={12} />
+            Undo
+          </button>
+        </div>
+      )}
 
       {/* Reply/Edit bar */}
       {(replyToMessage || editingMessage) && (
@@ -1093,9 +1422,9 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
         </div>
       ) : (
         <div className="flex flex-col border-t border-border bg-background">
-          {/* Formatting toolbar */}
+          {/* Formatting toolbar — shown only when toggled via [+] menu */}
           {showFormattingBar && (
-            <div className="flex items-center gap-1 px-3 py-1.5 border-b border-border/50 bg-muted/30">
+            <div className="flex items-center gap-1 px-3 py-1.5 border-b border-border/50 bg-muted/20">
               <button
                 type="button"
                 onClick={() => wrapSelectedText("**", "**")}
@@ -1128,8 +1457,8 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
               >
                 {"</>"}
               </button>
-              <div className="ml-auto flex items-center gap-1">
-                {/* Self-destruct selector */}
+              {/* Self-destruct timer inside formatting bar */}
+              <div className="ml-auto">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
@@ -1191,7 +1520,7 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
 
           {/* Link preview pill */}
           {linkPreviewUrl && (
-            <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/50 bg-muted/30">
+            <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/50 bg-muted/20">
               <Link size={11} className="text-primary flex-shrink-0" />
               <span className="text-xs text-muted-foreground truncate flex-1">
                 {linkPreviewUrl}
@@ -1206,23 +1535,218 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
             </div>
           )}
 
-          <div className="flex items-end gap-1.5 sm:gap-2 px-2 sm:px-3 py-3 input-bar-mobile">
-            <EmojiPicker
-              onEmojiSelect={(e) => setInputText((p) => p + e)}
-              currentUid={currentUid}
+          {/* Compact input row: [+]  [INPUT FIELD]  [mic/send] */}
+          <div className="flex items-center gap-2 px-3 py-2.5 input-bar-mobile">
+            {/* [+] Attachment popover */}
+            <Popover open={showAttachMenu} onOpenChange={setShowAttachMenu}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    "flex-shrink-0 h-9 w-9 rounded-full transition-colors border border-border/60",
+                    showAttachMenu
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "text-muted-foreground hover:text-primary hover:border-primary/40",
+                  )}
+                  title="Attachments & tools"
+                  data-ocid="chat.open_modal_button"
+                >
+                  <Plus
+                    size={17}
+                    className={cn(
+                      "transition-transform",
+                      showAttachMenu && "rotate-45",
+                    )}
+                  />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="start"
+                side="top"
+                sideOffset={8}
+                className="w-auto p-3 rounded-2xl shadow-lg"
+              >
+                <div className="grid grid-cols-3 gap-1.5">
+                  {/* Photo/Video */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAttachMenu(false);
+                      fileInputRef.current?.click();
+                    }}
+                    className="flex flex-col items-center gap-1.5 px-3 py-2.5 rounded-xl hover:bg-accent transition-colors min-w-[64px]"
+                  >
+                    <div className="w-9 h-9 rounded-full bg-blue-500/15 flex items-center justify-center">
+                      <Image size={17} className="text-blue-500" />
+                    </div>
+                    <span className="text-[10px] font-medium text-muted-foreground">
+                      Photo
+                    </span>
+                  </button>
+                  {/* Poll */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAttachMenu(false);
+                      setShowPollModal(true);
+                    }}
+                    className="flex flex-col items-center gap-1.5 px-3 py-2.5 rounded-xl hover:bg-accent transition-colors min-w-[64px]"
+                    data-ocid="chat.open_modal_button"
+                  >
+                    <div className="w-9 h-9 rounded-full bg-green-500/15 flex items-center justify-center">
+                      <BarChart2 size={17} className="text-green-500" />
+                    </div>
+                    <span className="text-[10px] font-medium text-muted-foreground">
+                      Poll
+                    </span>
+                  </button>
+                  {/* Sticker */}
+                  <div className="flex flex-col items-center gap-1.5 px-3 py-2.5 rounded-xl min-w-[64px]">
+                    <StickerPanel
+                      onStickerSelect={(sticker) => {
+                        setShowAttachMenu(false);
+                        setInputText(sticker);
+                        setTimeout(() => {
+                          sendMessage(
+                            chatId,
+                            currentUid,
+                            sticker,
+                            "text",
+                            {},
+                          ).catch(() => {});
+                          setInputText("");
+                        }, 50);
+                      }}
+                      compact
+                    />
+                    <span className="text-[10px] font-medium text-muted-foreground">
+                      Sticker
+                    </span>
+                  </div>
+                  {/* Schedule */}
+                  <Popover
+                    open={showSchedulePicker}
+                    onOpenChange={setShowSchedulePicker}
+                  >
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => setShowAttachMenu(false)}
+                        className="flex flex-col items-center gap-1.5 px-3 py-2.5 rounded-xl hover:bg-accent transition-colors min-w-[64px]"
+                      >
+                        <div className="w-9 h-9 rounded-full bg-orange-500/15 flex items-center justify-center">
+                          <CalendarClock
+                            size={17}
+                            className="text-orange-500"
+                          />
+                        </div>
+                        <span className="text-[10px] font-medium text-muted-foreground">
+                          Schedule
+                        </span>
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      align="start"
+                      side="top"
+                      className="w-72 rounded-2xl p-4 schedule-popover"
+                    >
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+                        Schedule Message
+                      </p>
+                      <div className="space-y-3">
+                        <div>
+                          <Label className="settings-label mb-1.5 block">
+                            Message text
+                          </Label>
+                          <Input
+                            value={inputText}
+                            onChange={(e) => setInputText(e.target.value)}
+                            placeholder="Your message..."
+                            className="rounded-xl text-sm h-8"
+                          />
+                        </div>
+                        <div>
+                          <Label className="settings-label mb-1.5 block">
+                            Send at
+                          </Label>
+                          <input
+                            type="datetime-local"
+                            value={scheduledAt}
+                            onChange={(e) => setScheduledAt(e.target.value)}
+                            className="w-full rounded-xl border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary/40"
+                          />
+                        </div>
+                        <Button
+                          size="sm"
+                          className="w-full rounded-xl gradient-btn"
+                          onClick={handleScheduleSend}
+                          disabled={!inputText.trim() || !scheduledAt}
+                        >
+                          <span className="text-white text-xs">Schedule</span>
+                        </Button>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                  {/* Format */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAttachMenu(false);
+                      setShowFormattingBar((v) => !v);
+                    }}
+                    className={cn(
+                      "flex flex-col items-center gap-1.5 px-3 py-2.5 rounded-xl hover:bg-accent transition-colors min-w-[64px]",
+                      showFormattingBar && "bg-accent",
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        "w-9 h-9 rounded-full flex items-center justify-center",
+                        showFormattingBar
+                          ? "bg-primary/20"
+                          : "bg-purple-500/15",
+                      )}
+                    >
+                      <Bold
+                        size={17}
+                        className={
+                          showFormattingBar ? "text-primary" : "text-purple-500"
+                        }
+                      />
+                    </div>
+                    <span className="text-[10px] font-medium text-muted-foreground">
+                      Format
+                    </span>
+                  </button>
+                  {/* Emoji */}
+                  <div className="flex flex-col items-center gap-1.5 px-3 py-2.5 rounded-xl min-w-[64px]">
+                    <EmojiPicker
+                      onEmojiSelect={(e) => {
+                        setShowAttachMenu(false);
+                        setInputText((p) => p + e);
+                      }}
+                      currentUid={currentUid}
+                      compact
+                    />
+                    <span className="text-[10px] font-medium text-muted-foreground">
+                      Emoji
+                    </span>
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,video/*,.pdf,.doc,.docx"
+              className="hidden"
+              onChange={handleFileSelect}
             />
-            <StickerPanel
-              onStickerSelect={(sticker) => {
-                setInputText(sticker);
-                // Auto-send sticker immediately
-                setTimeout(() => {
-                  sendMessage(chatId, currentUid, sticker, "text", {}).catch(
-                    () => {},
-                  );
-                  setInputText("");
-                }, 50);
-              }}
-            />
+
+            {/* Message input — takes all remaining space */}
             <div className="flex-1 relative">
               <Input
                 ref={inputRef}
@@ -1232,114 +1756,18 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
                 placeholder="Message..."
                 className="rounded-2xl bg-muted/60 border border-border/60 focus-visible:ring-1 focus-visible:ring-primary/50 focus-visible:border-primary/40 px-4 h-10 text-sm transition-all"
                 disabled={isSending || isUploading}
+                data-ocid="chat.input"
               />
             </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*,video/*,.pdf,.doc,.docx"
-              className="hidden"
-              onChange={handleFileSelect}
-            />
-            {/* Formatting toggle */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowFormattingBar((v) => !v)}
-              className={cn(
-                "text-muted-foreground hover:text-primary flex-shrink-0 h-10 w-10 rounded-xl transition-colors",
-                showFormattingBar && "bg-accent text-foreground",
-              )}
-              title="Formatting"
-            >
-              <Bold size={16} />
-            </Button>
-            {/* Poll button */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowPollModal(true)}
-              className="text-muted-foreground hover:text-primary flex-shrink-0 h-10 w-10 rounded-xl transition-colors"
-              title="Create Poll"
-            >
-              <BarChart2 size={18} />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isUploading}
-              className="text-muted-foreground hover:text-primary flex-shrink-0 h-10 w-10 rounded-xl transition-colors"
-            >
-              {isUploading ? (
-                <Loader2 size={18} className="animate-spin" />
-              ) : (
-                <Image size={20} />
-              )}
-            </Button>
-            {/* Schedule message button */}
-            <Popover
-              open={showSchedulePicker}
-              onOpenChange={setShowSchedulePicker}
-            >
-              <PopoverTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-muted-foreground hover:text-primary flex-shrink-0 h-10 w-10 rounded-xl transition-colors"
-                  title="Schedule message"
-                >
-                  <CalendarClock size={18} />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent
-                align="end"
-                side="top"
-                className="w-72 rounded-2xl p-4 schedule-popover"
-              >
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                  Schedule Message
-                </p>
-                <div className="space-y-3">
-                  <div>
-                    <Label className="settings-label mb-1.5 block">
-                      Message text
-                    </Label>
-                    <Input
-                      value={inputText}
-                      onChange={(e) => setInputText(e.target.value)}
-                      placeholder="Your message..."
-                      className="rounded-xl text-sm h-8"
-                    />
-                  </div>
-                  <div>
-                    <Label className="settings-label mb-1.5 block">
-                      Send at
-                    </Label>
-                    <input
-                      type="datetime-local"
-                      value={scheduledAt}
-                      onChange={(e) => setScheduledAt(e.target.value)}
-                      className="w-full rounded-xl border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary/40"
-                    />
-                  </div>
-                  <Button
-                    size="sm"
-                    className="w-full rounded-xl gradient-btn"
-                    onClick={handleScheduleSend}
-                    disabled={!inputText.trim() || !scheduledAt}
-                  >
-                    <span className="text-white text-xs">Schedule</span>
-                  </Button>
-                </div>
-              </PopoverContent>
-            </Popover>
+
+            {/* Right side: mic when empty, send when text present */}
             {inputText.trim() ? (
               <Button
                 size="icon"
                 onClick={handleSend}
                 disabled={isSending}
-                className="rounded-xl flex-shrink-0 h-10 w-10 gradient-btn shadow-sm"
+                className="rounded-full flex-shrink-0 h-10 w-10 gradient-btn shadow-sm"
+                data-ocid="chat.submit_button"
               >
                 {isSending ? (
                   <div className="w-4 h-4 border-2 border-white/60 border-t-white rounded-full animate-spin" />
@@ -1352,8 +1780,9 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
                 variant="ghost"
                 size="icon"
                 onClick={startRecording}
-                className="text-muted-foreground hover:text-primary flex-shrink-0 h-10 w-10 rounded-xl transition-colors"
+                className="text-muted-foreground hover:text-primary flex-shrink-0 h-10 w-10 rounded-full transition-colors"
                 title="Record voice message"
+                data-ocid="chat.button"
               >
                 <Mic size={20} />
               </Button>

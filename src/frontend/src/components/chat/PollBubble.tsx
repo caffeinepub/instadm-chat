@@ -1,31 +1,33 @@
 import { cn } from "@/lib/utils";
-import { BarChart2, CheckCircle2 } from "lucide-react";
-import { useState } from "react";
-import { type Poll, votePoll } from "../../services/featureService";
+import { BarChart2, CheckCircle2, EyeOff } from "lucide-react";
+import type { Poll } from "../../services/featureService";
 
 interface PollBubbleProps {
   poll: Poll;
   currentUid: string;
   isSender: boolean;
+  /** Called when the user casts or changes their vote. Parent is responsible for
+   *  persisting the vote and re-rendering with updated `poll.votes`. */
+  onVote?: (pollId: string, optionIndex: number) => void;
 }
 
-export function PollBubble({ poll, currentUid, isSender }: PollBubbleProps) {
-  const [currentPoll, setCurrentPoll] = useState(poll);
-
-  const totalVotes = Object.keys(currentPoll.votes).length;
-  const userVote = currentPoll.votes[currentUid];
+export function PollBubble({
+  poll,
+  currentUid,
+  isSender,
+  onVote,
+}: PollBubbleProps) {
+  const totalVotes = Object.keys(poll.votes).length;
+  const userVote = poll.votes[currentUid];
+  // For anonymous polls, hide vote counts from non-creators
+  const showVoteCounts = !poll.isAnonymous || poll.createdBy === currentUid;
 
   const handleVote = (optionIndex: number) => {
-    const updated = votePoll(currentPoll.id, currentUid, optionIndex);
-    const updatedPoll = updated[currentPoll.id];
-    if (updatedPoll) {
-      setCurrentPoll(updatedPoll);
-    }
+    onVote?.(poll.id, optionIndex);
   };
 
   const getVoteCount = (optionIndex: number) => {
-    return Object.values(currentPoll.votes).filter((v) => v === optionIndex)
-      .length;
+    return Object.values(poll.votes).filter((v) => v === optionIndex).length;
   };
 
   const getVotePercent = (optionIndex: number) => {
@@ -61,13 +63,28 @@ export function PollBubble({ poll, currentUid, isSender }: PollBubbleProps) {
         >
           Poll
         </span>
+        {poll.isAnonymous && (
+          <span
+            className={cn(
+              "flex items-center gap-0.5 text-[9px] font-medium px-1.5 py-0.5 rounded-full",
+              isSender
+                ? "bg-white/15 text-white/70"
+                : "bg-muted text-muted-foreground",
+            )}
+          >
+            <EyeOff size={9} />
+            anon
+          </span>
+        )}
         <span
           className={cn(
             "ml-auto text-[10px]",
             isSender ? "text-white/60" : "text-muted-foreground",
           )}
         >
-          {totalVotes} vote{totalVotes !== 1 ? "s" : ""}
+          {poll.isAnonymous
+            ? "? votes"
+            : `${totalVotes} vote${totalVotes !== 1 ? "s" : ""}`}
         </span>
       </div>
 
@@ -79,13 +96,13 @@ export function PollBubble({ poll, currentUid, isSender }: PollBubbleProps) {
             isSender ? "text-white" : "text-foreground",
           )}
         >
-          {currentPoll.question}
+          {poll.question}
         </p>
       </div>
 
       {/* Options */}
       <div className="px-3 pb-3 space-y-1.5 mt-1">
-        {currentPoll.options.map((option, i) => {
+        {poll.options.map((option, i) => {
           const isVoted = userVote === i;
           const votePercent = getVotePercent(i);
           const _voteCount = getVoteCount(i);
@@ -93,7 +110,7 @@ export function PollBubble({ poll, currentUid, isSender }: PollBubbleProps) {
           return (
             <button
               type="button"
-              key={`poll-option-${currentPoll.id}-${i}`}
+              key={`poll-option-${poll.id}-${i}`}
               onClick={() => handleVote(i)}
               className={cn(
                 "w-full relative rounded-xl overflow-hidden text-left transition-all",
@@ -145,14 +162,16 @@ export function PollBubble({ poll, currentUid, isSender }: PollBubbleProps) {
                 >
                   {option}
                 </span>
-                <span
-                  className={cn(
-                    "text-[10px] font-semibold flex-shrink-0",
-                    isSender ? "text-white/70" : "text-muted-foreground",
-                  )}
-                >
-                  {votePercent}%
-                </span>
+                {showVoteCounts && (
+                  <span
+                    className={cn(
+                      "text-[10px] font-semibold flex-shrink-0",
+                      isSender ? "text-white/70" : "text-muted-foreground",
+                    )}
+                  >
+                    {votePercent}%
+                  </span>
+                )}
               </div>
             </button>
           );

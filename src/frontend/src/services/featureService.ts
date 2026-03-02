@@ -45,6 +45,7 @@ export interface Poll {
   votes: Record<string, number>; // userId → option index
   createdAt: number;
   createdBy: string;
+  isAnonymous?: boolean;
 }
 
 export type BadgeId =
@@ -227,6 +228,7 @@ export function createPoll(
   question: string,
   options: string[],
   createdBy: string,
+  isAnonymous = false,
 ): Poll {
   const poll: Poll = {
     id: `poll_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -236,6 +238,7 @@ export function createPoll(
     votes: {},
     createdAt: Date.now(),
     createdBy,
+    isAnonymous,
   };
   const polls = getPolls();
   polls[poll.id] = poll;
@@ -1265,4 +1268,369 @@ export function addRoomMessage(
   msgs.push(msg);
   localStorage.setItem(`linkr_room_msgs_${roomId}`, JSON.stringify(msgs));
   return msg;
+}
+
+// ─── Saved Messages ───────────────────────────────────────────────────────────
+
+export interface SavedMessage {
+  id: string;
+  text: string;
+  mediaUrl?: string;
+  messageType: string;
+  createdAt: number;
+  savedAt: number;
+  sourceMessageId: string;
+  sourceChatId: string;
+  senderUsername?: string;
+}
+
+export function getSavedMessages(uid: string): SavedMessage[] {
+  try {
+    return JSON.parse(
+      localStorage.getItem(`linkr_saved_${uid}`) ?? "[]",
+    ) as SavedMessage[];
+  } catch {
+    return [];
+  }
+}
+
+export function saveMessage(uid: string, msg: SavedMessage): void {
+  try {
+    const existing = getSavedMessages(uid);
+    if (existing.find((m) => m.sourceMessageId === msg.sourceMessageId)) return;
+    existing.unshift(msg);
+    localStorage.setItem(`linkr_saved_${uid}`, JSON.stringify(existing));
+  } catch {
+    // ignore
+  }
+}
+
+export function unsaveMessage(uid: string, sourceMessageId: string): void {
+  try {
+    const msgs = getSavedMessages(uid).filter(
+      (m) => m.sourceMessageId !== sourceMessageId,
+    );
+    localStorage.setItem(`linkr_saved_${uid}`, JSON.stringify(msgs));
+  } catch {
+    // ignore
+  }
+}
+
+export function isMessageSaved(uid: string, sourceMessageId: string): boolean {
+  return getSavedMessages(uid).some(
+    (m) => m.sourceMessageId === sourceMessageId,
+  );
+}
+
+// ─── Message Pinning ──────────────────────────────────────────────────────────
+
+export interface PinnedMessage {
+  messageId: string;
+  text: string;
+  senderId: string;
+  pinnedAt: number;
+}
+
+export function getPinnedMessage(chatId: string): PinnedMessage | null {
+  try {
+    const raw = localStorage.getItem(`linkr_pinned_${chatId}`);
+    return raw ? (JSON.parse(raw) as PinnedMessage) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setPinnedMessage(
+  chatId: string,
+  pin: PinnedMessage | null,
+): void {
+  try {
+    if (pin) {
+      localStorage.setItem(`linkr_pinned_${chatId}`, JSON.stringify(pin));
+    } else {
+      localStorage.removeItem(`linkr_pinned_${chatId}`);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+// ─── Chat Folders ─────────────────────────────────────────────────────────────
+
+export interface ChatFolder {
+  id: string;
+  name: string;
+  color: string;
+  chatIds: string[];
+}
+
+export function getChatFolders(uid: string): ChatFolder[] {
+  try {
+    return JSON.parse(
+      localStorage.getItem(`linkr_folders_${uid}`) ?? "[]",
+    ) as ChatFolder[];
+  } catch {
+    return [];
+  }
+}
+
+export function saveChatFolders(uid: string, folders: ChatFolder[]): void {
+  try {
+    localStorage.setItem(`linkr_folders_${uid}`, JSON.stringify(folders));
+  } catch {
+    // ignore
+  }
+}
+
+export function createChatFolder(
+  uid: string,
+  name: string,
+  color: string,
+): ChatFolder {
+  const folder: ChatFolder = {
+    id: `folder_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+    name,
+    color,
+    chatIds: [],
+  };
+  const folders = getChatFolders(uid);
+  folders.push(folder);
+  saveChatFolders(uid, folders);
+  return folder;
+}
+
+export function addChatToFolder(
+  uid: string,
+  folderId: string,
+  chatId: string,
+): void {
+  const folders = getChatFolders(uid).map((f) =>
+    f.id === folderId && !f.chatIds.includes(chatId)
+      ? { ...f, chatIds: [...f.chatIds, chatId] }
+      : f,
+  );
+  saveChatFolders(uid, folders);
+}
+
+export function removeChatFromFolder(
+  uid: string,
+  folderId: string,
+  chatId: string,
+): void {
+  const folders = getChatFolders(uid).map((f) =>
+    f.id === folderId
+      ? { ...f, chatIds: f.chatIds.filter((id) => id !== chatId) }
+      : f,
+  );
+  saveChatFolders(uid, folders);
+}
+
+export function deleteChatFolder(uid: string, folderId: string): void {
+  const folders = getChatFolders(uid).filter((f) => f.id !== folderId);
+  saveChatFolders(uid, folders);
+}
+
+// ─── Last Seen Privacy ────────────────────────────────────────────────────────
+
+export type LastSeenPrivacy = "everyone" | "followers" | "nobody";
+
+export function getLastSeenPrivacy(uid: string): LastSeenPrivacy {
+  try {
+    const val = localStorage.getItem(`linkr_lastseen_privacy_${uid}`);
+    if (val === "everyone" || val === "followers" || val === "nobody")
+      return val;
+    return "everyone";
+  } catch {
+    return "everyone";
+  }
+}
+
+export function setLastSeenPrivacy(
+  uid: string,
+  privacy: LastSeenPrivacy,
+): void {
+  try {
+    localStorage.setItem(`linkr_lastseen_privacy_${uid}`, privacy);
+  } catch {
+    // ignore
+  }
+}
+
+export function shouldShowLastSeen(
+  profileUid: string,
+  viewerUid: string,
+  viewerFollowingList: string[],
+): boolean {
+  if (viewerUid === profileUid) return true;
+  const privacy = getLastSeenPrivacy(profileUid);
+  if (privacy === "everyone") return true;
+  if (privacy === "nobody") return false;
+  // followers: show only if viewer follows profileUid
+  return viewerFollowingList.includes(profileUid);
+}
+
+// ─── Chat Themes ──────────────────────────────────────────────────────────────
+
+export type ChatTheme =
+  | "default"
+  | "pink"
+  | "ocean"
+  | "sunset"
+  | "forest"
+  | "midnight"
+  | "gold";
+
+export const CHAT_THEMES: {
+  id: ChatTheme;
+  name: string;
+  gradient: string;
+  swatch: string;
+}[] = [
+  {
+    id: "default",
+    name: "Default",
+    gradient: "linear-gradient(135deg, #E1306C, #833AB4)",
+    swatch: "#E1306C",
+  },
+  {
+    id: "pink",
+    name: "Hot Pink",
+    gradient: "linear-gradient(135deg, #FF0080, #FF69B4)",
+    swatch: "#FF0080",
+  },
+  {
+    id: "ocean",
+    name: "Ocean",
+    gradient: "linear-gradient(135deg, #00B4DB, #0083B0)",
+    swatch: "#00B4DB",
+  },
+  {
+    id: "sunset",
+    name: "Sunset",
+    gradient: "linear-gradient(135deg, #FF6B35, #FF1744)",
+    swatch: "#FF6B35",
+  },
+  {
+    id: "forest",
+    name: "Forest",
+    gradient: "linear-gradient(135deg, #11998e, #38ef7d)",
+    swatch: "#11998e",
+  },
+  {
+    id: "midnight",
+    name: "Midnight",
+    gradient: "linear-gradient(135deg, #2C3E50, #8E44AD)",
+    swatch: "#2C3E50",
+  },
+  {
+    id: "gold",
+    name: "Gold",
+    gradient: "linear-gradient(135deg, #F7971E, #FFD200)",
+    swatch: "#F7971E",
+  },
+];
+
+export function getChatTheme(chatId: string): ChatTheme {
+  try {
+    const val = localStorage.getItem(`linkr_chat_theme_${chatId}`);
+    const valid: ChatTheme[] = [
+      "default",
+      "pink",
+      "ocean",
+      "sunset",
+      "forest",
+      "midnight",
+      "gold",
+    ];
+    if (val && valid.includes(val as ChatTheme)) return val as ChatTheme;
+    return "default";
+  } catch {
+    return "default";
+  }
+}
+
+export function setChatTheme(chatId: string, theme: ChatTheme): void {
+  try {
+    localStorage.setItem(`linkr_chat_theme_${chatId}`, theme);
+  } catch {
+    // ignore
+  }
+}
+
+export function getChatThemeGradient(chatId: string): string {
+  const theme = getChatTheme(chatId);
+  return (
+    CHAT_THEMES.find((t) => t.id === theme)?.gradient ??
+    "linear-gradient(135deg, #E1306C, #833AB4)"
+  );
+}
+
+// ─── Short Note / Status ──────────────────────────────────────────────────────
+
+export function getNote(uid: string): string {
+  try {
+    return localStorage.getItem(`linkr_note_${uid}`) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function setNote(uid: string, text: string): void {
+  try {
+    if (text.trim()) {
+      localStorage.setItem(`linkr_note_${uid}`, text.slice(0, 60));
+    } else {
+      localStorage.removeItem(`linkr_note_${uid}`);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+// ─── Active Now Indicator ─────────────────────────────────────────────────────
+
+export type ActiveStatus = "active" | "recently" | "away" | "offline";
+
+/**
+ * Returns the active status of a user based on their onlineStatus flag and
+ * lastSeen timestamp.
+ *
+ * "active"   – onlineStatus is true and lastSeen within 2 minutes
+ * "recently" – lastSeen within 15 minutes
+ * "away"     – lastSeen within 1 hour
+ * "offline"  – everything else
+ */
+export function getActiveStatus(user: {
+  onlineStatus: boolean;
+  lastSeen: number;
+}): ActiveStatus {
+  const now = Date.now();
+  const diff = now - user.lastSeen;
+  const minutes = diff / 60_000;
+
+  if (user.onlineStatus && minutes < 2) return "active";
+  if (minutes < 15) return "recently";
+  if (minutes < 60) return "away";
+  return "offline";
+}
+
+/**
+ * Returns a human-readable label for the active status, e.g. "Active now"
+ * or "Active 5m ago".
+ */
+export function getActiveStatusLabel(user: {
+  onlineStatus: boolean;
+  lastSeen: number;
+}): string {
+  const status = getActiveStatus(user);
+  if (status === "active") return "Active now";
+
+  const now = Date.now();
+  const diff = now - user.lastSeen;
+  const minutes = Math.floor(diff / 60_000);
+  const hours = Math.floor(diff / 3_600_000);
+
+  if (status === "recently") return `Active ${minutes}m ago`;
+  if (status === "away") return `Active ${hours}h ago`;
+  return "Offline";
 }

@@ -422,16 +422,19 @@ export function ChatProvider({
 
         if (afterTimestamp === 0n) {
           // Full refresh — preserve locally deleted messages and detect backend-deleted ones
+          const now5SecAgo = Date.now() - 5000;
           setMessages((prev) => {
             const existing = prev[chatId] ?? [];
             const newIds = new Set(withDeletedFor.map((m) => m.id));
             // Messages that existed before but are gone from backend = deleted for everyone
+            // Skip optimistic messages and very recent messages (may be in-flight)
             const ghostDeleted = existing
               .filter(
                 (m) =>
                   !m.deletedForEveryone &&
                   !newIds.has(m.id) &&
-                  !m.id.startsWith("optimistic_"),
+                  !m.id.startsWith("optimistic_") &&
+                  m.createdAt < now5SecAgo, // skip messages < 5s old
               )
               .map((m) => ({ ...m, deletedForEveryone: true, text: "" }));
             // Restore deletedFor flags from previous state (client-side only)
@@ -600,21 +603,21 @@ export function ChatProvider({
     fetchChats().finally(() => setIsLoadingChats(false));
   }, [actor, isFetching, fetchChats]);
 
-  // ─── Poll chats list every 2s ─────────────────────────────────────────────
+  // ─── Poll chats list every 600ms ─────────────────────────────────────────
 
   useEffect(() => {
     if (!actor || isFetching) return;
 
     chatsPollRef.current = setInterval(() => {
       fetchChats();
-    }, 1200);
+    }, 600);
 
     return () => {
       if (chatsPollRef.current) clearInterval(chatsPollRef.current);
     };
   }, [actor, isFetching, fetchChats]);
 
-  // ─── Poll active chat messages every 800ms ────────────────────────────────
+  // ─── Poll active chat messages every 200ms ────────────────────────────────
 
   const fullRefreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
     null,
@@ -626,16 +629,16 @@ export function ChatProvider({
     // Initial load of messages for active chat
     fetchMessages(activeChatId, 0n);
 
-    // Start polling for new messages
+    // Start polling for new messages — 200ms for active chat (near real-time)
     messagesPollRef.current = setInterval(() => {
       const lastTs = lastMessageTimestampRef.current[activeChatId] ?? 0n;
       fetchMessages(activeChatId, lastTs);
-    }, 500);
+    }, 200);
 
-    // Full refresh every 2 seconds to catch any missed updates (seen, edits, reactions)
+    // Full refresh every 800ms to catch any missed updates (seen, edits, reactions)
     fullRefreshIntervalRef.current = setInterval(() => {
       fetchMessages(activeChatId, 0n);
-    }, 2000);
+    }, 800);
 
     return () => {
       if (messagesPollRef.current) clearInterval(messagesPollRef.current);
@@ -644,14 +647,14 @@ export function ChatProvider({
     };
   }, [actor, isFetching, activeChatId, fetchMessages]);
 
-  // ─── Poll typing status every 800ms when chat is open ───────────────────────
+  // ─── Poll typing status every 300ms when chat is open ───────────────────────
 
   useEffect(() => {
     if (!actor || isFetching || !activeChatId) return;
 
     typingPollRef.current = setInterval(() => {
       fetchTypingStatus(activeChatId);
-    }, 500);
+    }, 300);
 
     return () => {
       if (typingPollRef.current) clearInterval(typingPollRef.current);
@@ -920,10 +923,19 @@ export function ChatProvider({
 
   const forwardMessage = useCallback(
     async (message: Message, targetChatId: string, senderId: string) => {
+      // Add forward attribution header to the message text
+      const senderUsername =
+        getUsers()[message.senderId]?.username ?? message.senderId;
+      const forwardPrefix = `[Forwarded from @${senderUsername}]\n`;
+      const forwardedText =
+        message.messageType === "text" && message.text
+          ? `${forwardPrefix}${message.text}`
+          : message.text;
+
       await sendMessage(
         targetChatId,
         senderId,
-        message.text,
+        forwardedText,
         message.messageType,
         {
           mediaUrl: message.mediaUrl,
@@ -1309,16 +1321,19 @@ export function ChatProvider({
 
         if (afterTimestamp === 0n) {
           // Full refresh — preserve locally deleted messages and detect backend-deleted ones
+          const groupNow5SecAgo = Date.now() - 5000;
           setGroupMessages((prev) => {
             const existing = prev[groupId] ?? [];
             const newIds = new Set(converted.map((m) => m.id));
             // Messages that existed before but are gone from backend = deleted for everyone
+            // Skip optimistic messages and very recent messages (may be in-flight)
             const ghostDeleted = existing
               .filter(
                 (m) =>
                   !m.deletedForEveryone &&
                   !newIds.has(m.id) &&
-                  !m.id.startsWith("optimistic_"),
+                  !m.id.startsWith("optimistic_") &&
+                  m.createdAt < groupNow5SecAgo,
               )
               .map((m) => ({ ...m, deletedForEveryone: true, text: "" }));
             const combined = [...converted, ...ghostDeleted].sort(
@@ -1456,19 +1471,19 @@ export function ChatProvider({
     [actor, isFetching, currentUid],
   );
 
-  // Poll group chats every 2s
+  // Poll group chats every 600ms
   useEffect(() => {
     if (!actor || isFetching) return;
     fetchGroupChats();
     groupPollRef.current = setInterval(() => {
       fetchGroupChats();
-    }, 1200);
+    }, 600);
     return () => {
       if (groupPollRef.current) clearInterval(groupPollRef.current);
     };
   }, [actor, isFetching, fetchGroupChats]);
 
-  // Poll active group messages every 800ms
+  // Poll active group messages every 250ms
   useEffect(() => {
     if (!actor || isFetching || !activeGroupChatId) return;
 
@@ -1478,7 +1493,7 @@ export function ChatProvider({
       const lastTs =
         lastMessageTimestampRef.current[`group_${activeGroupChatId}`] ?? 0n;
       fetchGroupMessages(activeGroupChatId, lastTs);
-    }, 500);
+    }, 250);
 
     return () => {
       if (groupMsgPollRef.current) clearInterval(groupMsgPollRef.current);
