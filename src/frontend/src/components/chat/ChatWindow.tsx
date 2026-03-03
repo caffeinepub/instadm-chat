@@ -231,10 +231,19 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
   }, [isPendingThisChat, pendingChatContext, users, otherUid, pendingChatUser]);
   const chatMessages = allMessages[chatId] ?? [];
 
+  // Fast-path resolved values — if pendingChatContext matches, use it directly.
+  // Declared early so they are available throughout the component (before the loading guard).
+  const resolvedOtherUser = isPendingThisChat
+    ? pendingChatContext!.otherUser
+    : otherUser;
+  const resolvedOtherUid = isPendingThisChat
+    ? pendingChatContext!.otherUid
+    : otherUid;
+
   // ─── Self-healing: fetch missing chat/user from backend ──────────────────
   const healingRef = useRef(false);
   useEffect(() => {
-    if (chat && otherUser) return; // Already resolved
+    if (chat && resolvedOtherUser) return; // Already resolved
     if (!actor || !chatId || healingRef.current) return;
 
     healingRef.current = true;
@@ -245,12 +254,12 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
         refreshChats();
 
         // If we still don't have otherUid from chat participants, we can't heal
-        if (!otherUid) return;
+        if (!resolvedOtherUid) return;
 
-        const otherPrincipal = Principal.fromText(otherUid);
+        const otherPrincipal = Principal.fromText(resolvedOtherUid);
 
         // Fetch other user's profile if missing
-        if (!otherUser) {
+        if (!resolvedOtherUser) {
           try {
             const profile = await actor.getUserProfile(otherPrincipal);
             if (profile) {
@@ -273,7 +282,7 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
 
     const timer = setTimeout(heal, 200);
     return () => clearTimeout(timer);
-  }, [chat, otherUser, chatId, otherUid, actor, refreshChats]);
+  }, [chat, resolvedOtherUser, resolvedOtherUid, chatId, actor, refreshChats]);
 
   // Reset healing flag when chatId changes
   useEffect(() => {
@@ -301,16 +310,17 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
 
   // Loading timeout: if chat/user still not resolved after 3s, show error + retry
   useEffect(() => {
-    if (chat && otherUser) return; // Already resolved
+    if (chat && resolvedOtherUser) return; // Already resolved
     const timer = setTimeout(() => {
       setLoadingTimedOut(true);
     }, 3000);
     return () => clearTimeout(timer);
-  }, [chat, otherUser]);
+  }, [chat, resolvedOtherUser]);
 
-  const isBlocked = currentUser?.blockedUsers?.includes(otherUid) || false;
+  const isBlocked =
+    currentUser?.blockedUsers?.includes(resolvedOtherUid) || false;
   const isBlockedByOther =
-    otherUser?.blockedUsers?.includes(currentUid) || false;
+    resolvedOtherUser?.blockedUsers?.includes(currentUid) || false;
 
   // Chat theme gradient for sender bubbles
   const senderGradient =
@@ -819,11 +829,9 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
     return `${m}:${String(s).padStart(2, "0")}`;
   };
 
-  // Show loading state only when BOTH chat AND otherUid are missing.
-  // If we have otherUid (from pendingChatContext or chatIdToOtherUid map),
-  // render the chat immediately — don't wait for chats state to settle.
-  const canRender = otherUid || chat;
-  if (!canRender || !otherUser) {
+  // Show loading state only when both chat AND otherUid are missing.
+  const canRender = resolvedOtherUid || chat;
+  if (!canRender || !resolvedOtherUser) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-background gap-4 relative">
         {onBack && (
@@ -894,7 +902,7 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
   }
 
   const participants = (
-    chat?.participants ?? [currentUid, otherUid].filter(Boolean)
+    chat?.participants ?? [currentUid, resolvedOtherUid].filter(Boolean)
   )
     .map((uid) => users[uid])
     .filter(Boolean);
@@ -920,29 +928,29 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
           onClick={() => {}}
         >
           <UserAvatar
-            src={otherUser.profilePicture}
-            username={otherUser.username}
-            isOnline={otherUser.onlineStatus}
+            src={resolvedOtherUser.profilePicture}
+            username={resolvedOtherUser.username}
+            isOnline={resolvedOtherUser.onlineStatus}
             size="md"
           />
           <div className="flex-1 min-w-0 text-left">
             <p className="font-semibold text-sm truncate tracking-tight">
-              @{otherUser.username}
+              @{resolvedOtherUser.username}
             </p>
             <p className="text-xs text-muted-foreground">
               {isOtherTyping ? (
                 <span className="text-primary font-medium">typing...</span>
-              ) : otherUser.onlineStatus ? (
+              ) : resolvedOtherUser.onlineStatus ? (
                 <span className="flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-online-dot inline-block" />
                   Active now
                 </span>
               ) : shouldShowLastSeen(
-                  otherUid,
+                  resolvedOtherUid,
                   currentUid,
                   currentUser?.following ?? [],
                 ) ? (
-                `Active ${formatLastSeen(otherUser.lastSeen)}`
+                `Active ${formatLastSeen(resolvedOtherUser.lastSeen)}`
               ) : (
                 <span className="text-muted-foreground/50">—</span>
               )}
@@ -1135,15 +1143,15 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
         {filteredMessages.length === 0 && livePollsWithVotes.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full gap-3 py-12">
             <UserAvatar
-              src={otherUser.profilePicture}
-              username={otherUser.username}
+              src={resolvedOtherUser.profilePicture}
+              username={resolvedOtherUser.username}
               size="xl"
               showOnline={false}
             />
             <div className="text-center">
-              <p className="font-semibold">@{otherUser.username}</p>
+              <p className="font-semibold">@{resolvedOtherUser.username}</p>
               <p className="text-xs text-muted-foreground mt-1">
-                {otherUser.bio || "No bio yet"}
+                {resolvedOtherUser.bio || "No bio yet"}
               </p>
             </div>
             <p className="text-xs text-muted-foreground mt-2">
@@ -1310,7 +1318,7 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
         })()}
 
         {/* Typing indicator */}
-        {isOtherTyping && <TypingIndicator user={otherUser} />}
+        {isOtherTyping && <TypingIndicator user={resolvedOtherUser} />}
         <div ref={messagesEndRef} />
       </div>
 

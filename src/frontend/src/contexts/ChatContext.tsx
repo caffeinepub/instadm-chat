@@ -327,6 +327,11 @@ export function ChatProvider({
     otherUser: AppUser;
   } | null>(null);
 
+  // Keep messagesRef in sync whenever messages state changes
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
   // Polling refs
   const typingTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>(
     {},
@@ -347,6 +352,10 @@ export function ChatProvider({
 
   // Track deleted-for-me per user (client-side)
   const deletedForMeRef = useRef<Set<string>>(getDeletedForMe(currentUid));
+
+  // Ref mirror of messages — used in fetchChats to avoid adding messages to the
+  // dependency array (which would restart the polling interval on every message)
+  const messagesRef = useRef<Record<string, Message[]>>({});
 
   // ─── Load chats from ICP ──────────────────────────────────────────────────
 
@@ -378,8 +387,8 @@ export function ChatProvider({
           }
         }
 
-        // Determine last message text from cached messages
-        const cached = messages[chatId] ?? [];
+        // Determine last message text from the ref (avoids messages in dep array)
+        const cached = messagesRef.current[chatId] ?? [];
         const lastMsg = cached.at(-1);
         const lastMsgText = lastMsg?.deletedForEveryone
           ? "Message deleted"
@@ -395,7 +404,9 @@ export function ChatProvider({
     } catch {
       // Silently fail — keep previous state
     }
-  }, [actor, isFetching, currentUid, messages]);
+    // NOTE: messages intentionally NOT in deps — we use messagesRef instead.
+    // This prevents the polling interval from being torn down/recreated on every message.
+  }, [actor, isFetching, currentUid]);
 
   // ─── Load messages for a chat ─────────────────────────────────────────────
 
@@ -603,14 +614,17 @@ export function ChatProvider({
     fetchChats().finally(() => setIsLoadingChats(false));
   }, [actor, isFetching, fetchChats]);
 
-  // ─── Poll chats list every 500ms ─────────────────────────────────────────
+  // ─── Poll chats list every 2000ms ────────────────────────────────────────
+  // 500ms was too aggressive and caused race conditions with the messages poll.
+  // Messages poll at 150ms is fast enough for real-time feel; chats list only
+  // needs to update for sidebar ordering/last-message — 2s is fine.
 
   useEffect(() => {
     if (!actor || isFetching) return;
 
     chatsPollRef.current = setInterval(() => {
       fetchChats();
-    }, 500);
+    }, 2000);
 
     return () => {
       if (chatsPollRef.current) clearInterval(chatsPollRef.current);
@@ -1000,10 +1014,12 @@ export function ChatProvider({
         const backendChat = await actor.getOrCreateChat(otherPrincipal);
         const frontendChat = backendChatToFrontend(backendChat, chatId);
 
-        // Step 3: Update state — user first, then chat, then set active
-        // Use separate setState calls (no flushSync) to avoid React 18 batching issues
+        // Step 3: Update state — user FIRST (so ChatWindow.useMemo can read from
+        // users map immediately), then chats, then set pending context + active ID.
         if (resolvedUser) {
+          // Update users map first — ChatWindow derives otherUser from users[otherUid]
           setUsers((prev) => ({ ...prev, [otherUid]: resolvedUser! }));
+          saveUser(resolvedUser);
         }
         setChats((prev) => {
           const exists = prev.some((c) => c.id === chatId);
@@ -1019,6 +1035,7 @@ export function ChatProvider({
         // Set pendingChatUser BEFORE setActiveChatIdState so ChatWindow renders with data
         setPendingChatUser(resolvedUser ?? null);
         // Set atomic pending context so ChatWindow can render with all data immediately
+        // This is the most reliable path because it's set atomically with all required data
         if (resolvedUser) {
           setPendingChatContext({ chatId, otherUid, otherUser: resolvedUser });
         }
