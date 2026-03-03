@@ -106,6 +106,8 @@ export interface GroupChat {
   lastMessage: string;
   lastUpdated: number;
   typing: Record<string, boolean>;
+  inviteLink?: string;
+  slowMode?: bigint;
 }
 
 // ─── Context types ─────────────────────────────────────────────────────────────

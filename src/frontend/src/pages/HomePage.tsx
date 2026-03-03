@@ -10,6 +10,7 @@ import {
   Archive,
   Bell,
   Bookmark,
+  Camera,
   Compass,
   LayoutGrid,
   LogOut,
@@ -110,6 +111,11 @@ export function HomePage() {
       icon: <LayoutGrid size={22} />,
       label: "Feed",
       action: () => navigate({ to: "/feed" }),
+    },
+    {
+      icon: <Camera size={22} />,
+      label: "Status",
+      action: () => navigate({ to: "/status" }),
     },
     {
       icon: <Compass size={22} />,

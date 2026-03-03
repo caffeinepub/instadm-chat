@@ -1,78 +1,92 @@
-# Linkr — Batch 1 Feature Addition
+# Linkr
 
 ## Current State
-Linkr is a real-time chat app on ICP with:
+Full-stack real-time chat app on ICP with:
 - Internet Identity login + username registration
-- DM chats (real-time polling at 500ms)
-- Group chats (create, add members, leave)
-- Message actions: reactions, reply, edit, delete for everyone
-- Follow/unfollow, follow requests for private accounts
-- Media: photo uploads, voice recording
-- Seen indicator, typing indicator
-- Notifications (browser + in-app)
-- Dark mode, pink/violet theme
-- Pin/archive/mute/vanish mode chats
-- Profile page, settings page, notifications page, archive page
+- 1:1 DM chats with real-time polling (200ms incremental, 800ms full refresh)
+- Group chats with admin/mod/member roles
+- Message features: text, image, voice, reactions, reply, edit, delete for everyone, pin, vanish mode
+- Follow/unfollow system with private account follow-request gating
+- Notifications (browser push + in-app toast)
+- Feed page (basic posts), Explore page (users + leaderboard), Public Rooms/Channels (basic)
+- Stories (basic), Status/Mood, Polls in chat, Shared Media Gallery
+- Message formatting, self-destructing messages, message threads
+- Group announcements, badges/achievements
+- Notes to Self, Saved Messages, Bookmarks, Chat Wallpapers, Chat Themes
+- Chat Folders, Last Seen Privacy, Undo Send, Double-tap heart, Message Scheduling
+- Screen Time Tracker, Message Report
+- Profile: bio, avatar, portfolio/links, birthday, view history, username history
+- Settings: privacy, notifications, appearance, account
 
 ## Requested Changes (Diff)
 
 ### Add
-1. **Status / Mood** — Users can set a mood string (e.g. "Busy", "Gaming", "At work") stored in UserProfile. Shown in sidebar next to avatar and on profile page.
-2. **Polls in Chat** — Send a poll inside DM or group chat. Poll has a question + up to 4 options. Each user can vote once. Vote counts shown in real-time.
-3. **Shared Media Gallery** — Per-conversation tab showing all images/videos/voice messages sent in that chat, in a grid layout.
-4. **Explore Page** — Discover public users and public rooms. Shows recommended users (non-followed), trending hashtags from posts.
-5. **Public Feed / Timeline** — Users can post updates (text + optional image). Posts visible to followers. Like and comment on posts.
-6. **Message Formatting** — Support bold (`**text**`), italic (`_text_`), strikethrough (`~~text~~`), and code (`` `code` ``) in message text. Rendered on display.
-7. **Self-Destructing Messages** — When sending, user can set a timer (5s, 30s, 1min, 5min, 1hr). Message auto-deletes after being seen for that duration.
-8. **Message Threads** — In group chats, users can reply to a message to start a thread. Thread view shows original message + replies in a side panel.
-9. **Group Roles** — Groups have roles: Admin, Moderator, Member. Admin can assign Moderator. Moderators can remove members. Shown with badge next to name.
-10. **Group Announcements** — Admin/Moderator can post announcements in a group. Shown as a pinned banner in the chat.
-11. **Badges & Achievements** — Milestone badges: "First Message", "100 Messages", "10 Followers", "Group Creator", etc. Displayed on profile page.
+
+**Telegram Channel Features:**
+- Public Channels: create, join/leave, subscriber count, admin-only post, pinned message, channel description, channel rules, invite link
+- Channel discovery on Explore page
+- Forward message with source attribution (already partial)
+- Anonymous poll voting (improve existing)
+- Slow mode per group (configurable: off/30s/1m/5m/15m/1h)
+- Group invite links (generate, share, join via link)
+- Group rules/description editable by admin
+
+**WhatsApp Status (Feed replacement):**
+- Status posts: text with colorful background OR photo
+- Status visible to followers for 24 hours, then auto-delete
+- Views count per status (who viewed)
+- Reply to status via DM (opens chat)
+- Status privacy: Everyone / My Followers / Close Friends
+- Close Friends list management in Settings
+
+**Instagram Stories (upgrade existing):**
+- 24-hour auto-expiring stories stored in bio-encoded or separate backend field
+- Story reactions (emoji tap reply)
+- Story views list
+- Story highlights (permanent, saved to profile)
+- Story reply goes to DM
+- Close Friends story (visible only to close friends list)
+- Stories bar at top of home feed
+
+**Search improvements:**
+- Partial/substring username search (not just prefix)
+- All registered users browsable on Explore "People" tab
+
+**Additional social features:**
+- User Notes (short 60-char status visible on profile like Instagram Notes)
+- Birthday notifications to followers
+- Verified badge support in profile
 
 ### Modify
-- `UserProfile` — add `mood` (Text), `badges` ([Text]) fields
-- `GroupChat` — add `roles` ([(Text, Text)]) for member roles, `announcements` ([Text]) for group announcements
-- `Message` — add `selfDestructAfter` (?Int) for self-destruct timer in seconds, `threadId` (?MessageId) for thread parent
-- `sendMessage` / `sendGroupMessage` — accept `selfDestructAfter` and `threadId` params
-- Public feed stored in new `posts` map with like/comment support
+- Feed page: replace generic feed with WhatsApp Status-style colored text/photo statuses
+- Stories: upgrade to 24h auto-delete with highlights, views, reactions
+- Public Channels page: upgrade with full Telegram-style features
+- Group settings: add slow mode toggle, invite link generation
+- Explore: add Channels tab and People (all users) tab
+- Profile page: add Story Highlights section, Close Friends badge
 
 ### Remove
-- Nothing removed
+- Nothing removed; all existing features preserved
 
 ## Implementation Plan
 
-### Backend (Motoko)
-1. Add `mood` and `badges` fields to `UserProfile`
-2. Add `selfDestructAfter` and `threadId` to `Message`
-3. Add `roles` and `announcements` to `GroupChat`
-4. Add new `Post` type with `likes`, `comments`, `hashtags` fields
-5. Add `Poll` type stored as a special message or separate map
-6. New functions:
-   - `setMood(mood: Text)` — update caller's mood
-   - `createPost(text, mediaUrl, hashtags)` — create feed post
-   - `getFeedPosts(afterTimestamp)` — get posts from followed users
-   - `getExplorePosts()` — get recent public posts
-   - `likePost(postId)` / `unlikePost(postId)`
-   - `commentOnPost(postId, comment)`
-   - `createPoll(chatId, question, options)` — create poll in DM
-   - `createGroupPoll(groupId, question, options)` — create poll in group
-   - `votePoll(pollId, optionIndex)` — cast vote
-   - `getPoll(pollId)` — get poll with vote counts
-   - `setGroupMemberRole(groupId, userId, role)` — set role
-   - `addGroupAnnouncement(groupId, text)` — post announcement
-   - `getGroupMessages` — include thread messages
-   - `awardBadge(userId, badge)` — internal function, called on milestone events
-   - Update `sendMessage` / `sendGroupMessage` to accept `selfDestructAfter`, `threadId`
+### Backend (Motoko):
+1. Add `Channel` type: id, name, description, rules, adminId, subscribers, createdAt, inviteLink, slowMode, pinnedMessage
+2. Add `Story` type: id, authorId, content (text or mediaUrl), bgColor, createdAt, expiresAt, views, reactions, isCloseFriends, isHighlight
+3. Add `Status` type (WhatsApp-style): id, authorId, text, bgColor, photoUrl, createdAt, expiresAt (24h), views, privacy
+4. Add channel functions: createChannel, joinChannel, leaveChannel, postToChannel, getChannels, getChannelById, setChannelSlowMode, generateChannelInviteLink, joinChannelByInviteLink, pinMessageInChannel
+5. Add story functions: createStory, getStoriesForUser, getMyStories, markStoryViewed, reactToStory, deleteStory, addStoryHighlight, getHighlights
+6. Add status functions: createStatus, getStatusFeed, markStatusViewed, deleteStatus
+7. Add closeFriends to UserProfile: closeFriends array of UIDs
+8. Add group inviteLink field and generateGroupInviteLink, joinGroupByInviteLink functions
+9. Add groupSlowMode field to GroupChat
+10. Improve searchProfiles to do full substring search
 
-### Frontend
-1. **Status/Mood**: Add mood selector dropdown in profile edit. Show mood in sidebar contact list and chat header.
-2. **Polls**: Add poll button in chat input. Poll creation modal (question + 4 options). Poll bubble in chat with vote buttons and live counts.
-3. **Shared Media Gallery**: Add "Media" tab in chat header. Grid of thumbnails, click to open full screen.
-4. **Explore Page**: New page accessible from nav. Shows trending users, hashtag cloud, recent public posts.
-5. **Public Feed**: New "Feed" section or page. Shows posts from followed users. Like button, comment thread, share.
-6. **Message Formatting**: Parse markdown-lite in message text on render (bold, italic, strikethrough, code).
-7. **Self-Destructing Messages**: Timer picker in send area (clock icon). Countdown shown on message bubble after seen.
-8. **Message Threads**: In group chat, click "Reply in thread" on any message. Side panel opens showing thread.
-9. **Group Roles**: Role badge (Admin=gold, Mod=silver, Member=grey) next to name in group member list. Admin can change roles.
-10. **Group Announcements**: Announcement editor for admin/mod. Shown as a pinned yellow banner at top of group chat.
-11. **Badges**: Badge icons shown on profile. Auto-awarded on first message, 100 messages, 10 followers, group creation.
+### Frontend:
+1. Feed page → WhatsApp Status page (colored text/photo statuses, 24h expiry, views, reply via DM)
+2. Stories bar on Home → real stories with 24h expiry, view counts, reactions, highlights
+3. Channels page → full Telegram-style (join, post, subscriber count, invite link, pinned)
+4. Group settings modal → slow mode, invite link, rules
+5. Profile page → Story Highlights row, Close Friends management
+6. Explore page → add Channels tab + People tab (all users)
+7. Settings → Close Friends list management

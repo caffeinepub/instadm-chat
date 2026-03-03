@@ -6,6 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { Principal } from "@icp-sdk/core/principal";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import {
   ArrowLeft,
@@ -16,6 +17,7 @@ import {
   Edit2,
   ExternalLink,
   Globe,
+  Heart,
   Link2,
   Loader2,
   Lock,
@@ -32,10 +34,12 @@ import {
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import type { Story } from "../backend.d";
 import { UserAvatar } from "../components/chat/UserAvatar";
 import { VerifiedBadge } from "../components/chat/VerifiedBadge";
 import { useAuth } from "../contexts/AuthContext";
 import { useChat } from "../contexts/ChatContext";
+import { useActor } from "../hooks/useActor";
 import { extractPlainBio } from "../services/bioStorageService";
 import {
   ALL_BADGES,
@@ -90,6 +94,62 @@ export function ProfilePage() {
   const targetUser = isOwnProfile
     ? currentUser
     : Object.values(users).find((u) => u.username === username);
+
+  const { actor } = useActor();
+
+  // Story highlights
+  const [highlights, setHighlights] = useState<Story[]>([]);
+  const [selectedHighlight, setSelectedHighlight] = useState<Story | null>(
+    null,
+  );
+
+  // Close friends badge
+  const [isCloseFriend, setIsCloseFriend] = useState(false);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: targetUser uid triggers
+  useEffect(() => {
+    if (!targetUser || !actor) return;
+    try {
+      actor
+        .getHighlights(Principal.fromText(targetUser.uid))
+        .then((hl) => setHighlights(hl))
+        .catch(() => {});
+    } catch {
+      /* invalid principal — skip */
+    }
+  }, [targetUser?.uid, actor]);
+
+  // Check if this person is in close friends
+  // biome-ignore lint/correctness/useExhaustiveDependencies: targetUser uid triggers
+  useEffect(() => {
+    if (!actor || isOwnProfile || !targetUser) return;
+    actor
+      .getCloseFriends()
+      .then((friends) => {
+        setIsCloseFriend(
+          friends.some((f) => f._id.toString() === targetUser.uid),
+        );
+      })
+      .catch(() => {});
+  }, [actor, isOwnProfile, targetUser?.uid]);
+
+  const handleToggleCloseFriend = async () => {
+    if (!actor || !targetUser) return;
+    try {
+      const principal = Principal.fromText(targetUser.uid);
+      if (isCloseFriend) {
+        await actor.removeCloseFriend(principal);
+        setIsCloseFriend(false);
+        toast.success("Removed from close friends");
+      } else {
+        await actor.addCloseFriend(principal);
+        setIsCloseFriend(true);
+        toast.success("Added to close friends");
+      }
+    } catch {
+      toast.error("Failed to update close friends");
+    }
+  };
 
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
@@ -654,7 +714,85 @@ export function ProfilePage() {
                   Following
                 </span>
               </div>
+              {highlights.length > 0 && (
+                <>
+                  <div className="w-px bg-border" />
+                  <div className="flex flex-col items-center gap-0.5">
+                    <span className="text-xl font-bold leading-tight tabular-nums">
+                      {highlights.length}
+                    </span>
+                    <span className="text-xs text-muted-foreground font-medium">
+                      Highlights
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
+
+            {/* Story Highlights */}
+            {highlights.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+                  Story Highlights
+                </p>
+                <div className="flex gap-3 overflow-x-auto pb-1 no-scrollbar">
+                  {highlights.map((story) => (
+                    <button
+                      key={story.id}
+                      type="button"
+                      onClick={() => setSelectedHighlight(story)}
+                      className="flex flex-col items-center gap-1.5 flex-shrink-0"
+                    >
+                      <div
+                        className="w-14 h-14 rounded-full story-ring flex items-center justify-center overflow-hidden"
+                        style={
+                          story.mediaUrl
+                            ? undefined
+                            : { background: story.bgColor || "var(--primary)" }
+                        }
+                      >
+                        {story.mediaUrl ? (
+                          <img
+                            src={story.mediaUrl}
+                            alt={story.highlightTitle}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-white text-sm font-bold">
+                            {story.highlightTitle.slice(0, 1).toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-muted-foreground truncate max-w-[56px]">
+                        {story.highlightTitle || "Highlight"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Close Friends badge / button */}
+            {!isOwnProfile && isFollowing && (
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleToggleCloseFriend}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                    isCloseFriend
+                      ? "bg-pink-500/10 border-pink-500/40 text-pink-500"
+                      : "border-border text-muted-foreground hover:border-pink-500/40 hover:text-pink-500"
+                  }`}
+                  data-ocid="profile.toggle"
+                >
+                  <Heart
+                    size={11}
+                    className={isCloseFriend ? "fill-pink-500" : ""}
+                  />
+                  {isCloseFriend ? "Close Friend ✓" : "Add to Close Friends"}
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           /* ── Edit form ── */
@@ -1029,6 +1167,56 @@ export function ProfilePage() {
           </a>
         </p>
       </footer>
+
+      {/* Highlight story viewer */}
+      {selectedHighlight && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
+          onClick={() => setSelectedHighlight(null)}
+          onKeyDown={(e) => e.key === "Escape" && setSelectedHighlight(null)}
+          data-ocid="profile.modal"
+        >
+          <div
+            className="relative w-full max-w-sm h-[70dvh] rounded-2xl overflow-hidden shadow-2xl"
+            style={{
+              background: selectedHighlight.mediaUrl
+                ? undefined
+                : selectedHighlight.bgColor || "oklch(var(--primary))",
+            }}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={() => {}}
+          >
+            {selectedHighlight.mediaUrl ? (
+              <img
+                src={selectedHighlight.mediaUrl}
+                alt={selectedHighlight.highlightTitle}
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+            ) : null}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+            <button
+              type="button"
+              onClick={() => setSelectedHighlight(null)}
+              className="absolute top-4 right-4 w-8 h-8 rounded-full bg-black/40 flex items-center justify-center text-white hover:bg-black/60 transition-colors"
+              data-ocid="profile.close_button"
+            >
+              <X size={16} />
+            </button>
+            {selectedHighlight.text && (
+              <div className="absolute bottom-8 left-0 right-0 px-6 text-center">
+                <p className="text-white font-semibold text-lg drop-shadow-lg">
+                  {selectedHighlight.text}
+                </p>
+              </div>
+            )}
+            <div className="absolute bottom-3 left-0 right-0 text-center">
+              <p className="text-white/60 text-xs">
+                {selectedHighlight.highlightTitle}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

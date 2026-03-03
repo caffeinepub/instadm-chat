@@ -53,7 +53,7 @@ import {
 import { hasPendingRequest } from "../../services/followService";
 import type { AppUser, Chat, GroupChat } from "../../types";
 import { CreateGroupModal } from "./CreateGroupModal";
-import { StoryBar } from "./StoryBar";
+import { StoryBarICP } from "./StoryBarICP";
 import { UserAvatar } from "./UserAvatar";
 
 interface SidebarProps {
@@ -329,7 +329,7 @@ export function Sidebar({ onChatSelect, onGroupSelect }: SidebarProps) {
       </div>
 
       {/* Story bar */}
-      <StoryBar />
+      <StoryBarICP />
 
       {/* Search */}
       <div className="px-4 pb-3">

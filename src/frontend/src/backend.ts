@@ -89,8 +89,45 @@ export class ExternalBlob {
         return this;
     }
 }
-export type UserId = Principal;
 export type Timestamp = bigint;
+export type ChannelId = string;
+export interface _CaffeineStorageRefillInformation {
+    proposed_top_up_amount?: bigint;
+}
+export interface Story {
+    id: StoryId;
+    highlightTitle: string;
+    expiresAt: Timestamp;
+    isCloseFriends: boolean;
+    views: Array<UserId>;
+    authorId: UserId;
+    createdAt: Timestamp;
+    text: string;
+    mediaUrl: string;
+    isHighlight: boolean;
+    reactions: Array<[string, Array<UserId>]>;
+    bgColor: string;
+}
+export type StoryId = string;
+export interface Channel {
+    id: ChannelId;
+    name: string;
+    createdAt: Timestamp;
+    description: string;
+    subscribers: Array<UserId>;
+    inviteLink: string;
+    isPublic: boolean;
+    adminId: UserId;
+    slowModeSecs: bigint;
+    rules: string;
+    pinnedMessageId?: MessageId;
+}
+export interface _CaffeineStorageCreateCertificateResult {
+    method: string;
+    blob_hash: string;
+}
+export type StatusId = string;
+export type UserId = Principal;
 export interface GroupChat {
     id: string;
     members: Array<UserId>;
@@ -98,8 +135,10 @@ export interface GroupChat {
     createdAt: Timestamp;
     lastMessage?: string;
     lastUpdated: Timestamp;
+    slowMode: bigint;
     typing: Array<[string, boolean]>;
     description: string;
+    inviteLink: string;
     adminId: UserId;
 }
 export interface Chat {
@@ -114,9 +153,6 @@ export interface Chat {
     archived: Array<[string, boolean]>;
 }
 export type MessageId = string;
-export interface _CaffeineStorageRefillInformation {
-    proposed_top_up_amount?: bigint;
-}
 export interface Message {
     edited: boolean;
     createdAt: Timestamp;
@@ -131,9 +167,16 @@ export interface Message {
     reactions: Array<[string, Array<UserId>]>;
     senderId: UserId;
 }
-export interface _CaffeineStorageCreateCertificateResult {
-    method: string;
-    blob_hash: string;
+export interface Status {
+    id: StatusId;
+    expiresAt: Timestamp;
+    views: Array<UserId>;
+    authorId: UserId;
+    createdAt: Timestamp;
+    text: string;
+    photoUrl: string;
+    privacy: string;
+    bgColor: string;
 }
 export interface UserProfile {
     _id: UserId;
@@ -142,6 +185,7 @@ export interface UserProfile {
     timezone: string;
     fcmToken: string;
     username: string;
+    closeFriends: Array<UserId>;
     birthDate: string;
     websiteUrl: string;
     createdAt: Timestamp;
@@ -180,39 +224,69 @@ export interface backendInterface {
     _caffeineStorageRefillCashier(refillInformation: _CaffeineStorageRefillInformation | null): Promise<_CaffeineStorageRefillResult>;
     _caffeineStorageUpdateGatewayPrincipals(): Promise<void>;
     _initializeAccessControlWithSecret(userSecret: string): Promise<void>;
+    addCloseFriend(userId: Principal): Promise<void>;
     addGroupMember(groupId: string, userId: Principal): Promise<void>;
     addReaction(chatId: string, messageId: string, emoji: string): Promise<void>;
+    addToHighlights(storyId: string, highlightTitle: string): Promise<void>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
     blockUser(targetId: Principal): Promise<void>;
+    createChannel(name: string, description: string, rules: string, isPublic: boolean): Promise<string>;
     createGroupChat(name: string, description: string, memberIds: Array<Principal>): Promise<string>;
     createOrUpdateUserProfile(profile: UserProfile): Promise<void>;
+    createStatus(text: string, bgColor: string, photoUrl: string, privacy: string): Promise<Status>;
+    createStory(text: string, mediaUrl: string, bgColor: string, isCloseFriends: boolean): Promise<Story>;
     createTemporaryFolder(folderName: string): Promise<void>;
     deleteAccount(): Promise<void>;
     deleteMessageForEveryone(chatId: string, messageId: string): Promise<void>;
+    deleteStatus(statusId: string): Promise<void>;
+    deleteStory(storyId: string): Promise<void>;
     deleteTemporaryFolder(folderName: string): Promise<void>;
     editMessage(chatId: string, messageId: string, newText: string): Promise<void>;
     followUser(targetId: Principal): Promise<void>;
+    generateChannelInviteLink(channelId: string): Promise<string>;
+    generateGroupInviteLink(groupId: string): Promise<string>;
     getCallerUserProfile(): Promise<UserProfile | null>;
     getCallerUserRole(): Promise<UserRole>;
+    getChannelById(channelId: string): Promise<Channel | null>;
+    getChannelMessages(channelId: string, afterTimestamp: bigint): Promise<Array<Message>>;
+    getChannels(): Promise<Array<Channel>>;
     getChatById(chatId: string): Promise<Chat | null>;
     getChatMessages(chatId: string, afterTimestamp: bigint): Promise<Array<Message>>;
+    getCloseFriends(): Promise<Array<UserProfile>>;
     getEmailByPhoneNumber(_phoneNumber: string): Promise<string>;
     getGroupById(groupId: string): Promise<GroupChat | null>;
     getGroupMessages(groupId: string, afterTimestamp: bigint): Promise<Array<Message>>;
+    getHighlights(userId: Principal): Promise<Array<Story>>;
     getLifestyleChoices(): Promise<Array<string>>;
+    getMyChannels(): Promise<Array<Channel>>;
     getMyChats(): Promise<Array<Chat>>;
     getMyGroupChats(): Promise<Array<GroupChat>>;
+    getMyStatuses(): Promise<Array<Status>>;
+    getMyStories(): Promise<Array<Story>>;
     getOrCreateChat(otherUser: Principal): Promise<Chat>;
     getPersonalityTypes(): Promise<Array<string>>;
     getRelationshipStatuses(): Promise<Array<string>>;
+    getStatusFeed(): Promise<Array<Status>>;
+    getStoriesByUser(userId: Principal): Promise<Array<Story>>;
+    getStoriesForFeed(): Promise<Array<[Principal, Array<Story>]>>;
     getTemporaryFolders(): Promise<Array<string>>;
     getTypingStatus(chatId: string): Promise<Array<[string, boolean]>>;
     getUserProfile(userId: Principal): Promise<UserProfile | null>;
     getWellBeingPractices(): Promise<Array<string>>;
     isCallerAdmin(): Promise<boolean>;
+    joinChannel(channelId: string): Promise<void>;
+    joinChannelByInviteLink(inviteLink: string): Promise<void>;
+    joinGroupByInviteLink(inviteLink: string): Promise<void>;
+    leaveChannel(channelId: string): Promise<void>;
     leaveGroup(groupId: string): Promise<void>;
     markGroupMessagesSeen(groupId: string): Promise<void>;
     markMessagesSeen(chatId: string): Promise<void>;
+    markStatusViewed(statusId: string): Promise<void>;
+    markStoryViewed(storyId: string): Promise<void>;
+    pinMessageInChannel(channelId: string, messageId: string): Promise<void>;
+    postToChannel(channelId: string, text: string, mediaUrl: string, messageType: string): Promise<Message>;
+    reactToStory(storyId: string, emoji: string): Promise<void>;
+    removeCloseFriend(userId: Principal): Promise<void>;
     removeGroupMember(groupId: string, userId: Principal): Promise<void>;
     removeReaction(chatId: string, messageId: string, emoji: string): Promise<void>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
@@ -222,6 +296,7 @@ export interface backendInterface {
     searchUsersByUsernamePrefix(prefix: string): Promise<Array<UserProfile>>;
     sendGroupMessage(groupId: string, text: string, messageType: string, mediaUrl: string, replyTo: string): Promise<Message>;
     sendMessage(chatId: string, text: string, messageType: string, mediaUrl: string, replyTo: string): Promise<Message>;
+    setGroupSlowMode(groupId: string, slowModeSecs: bigint): Promise<void>;
     setGroupTypingStatus(groupId: string, isTyping: boolean): Promise<void>;
     setTypingStatus(chatId: string, isTyping: boolean): Promise<void>;
     toggleArchive(chatId: string): Promise<void>;
@@ -230,11 +305,12 @@ export interface backendInterface {
     toggleVanishMode(chatId: string): Promise<void>;
     unblockUser(targetId: Principal): Promise<void>;
     unfollowUser(targetId: Principal): Promise<void>;
+    updateChannelInfo(channelId: string, name: string, description: string, rules: string): Promise<void>;
     updateGroupInfo(groupId: string, name: string, description: string): Promise<void>;
     updateLastSeen(): Promise<void>;
     updateOnlineStatus(status: boolean): Promise<void>;
 }
-import type { Chat as _Chat, GroupChat as _GroupChat, Message as _Message, MessageId as _MessageId, MessageType as _MessageType, Timestamp as _Timestamp, UserId as _UserId, UserProfile as _UserProfile, UserRole as _UserRole, _CaffeineStorageRefillInformation as __CaffeineStorageRefillInformation, _CaffeineStorageRefillResult as __CaffeineStorageRefillResult } from "./declarations/backend.did.d.ts";
+import type { Channel as _Channel, ChannelId as _ChannelId, Chat as _Chat, GroupChat as _GroupChat, Message as _Message, MessageId as _MessageId, MessageType as _MessageType, Timestamp as _Timestamp, UserId as _UserId, UserProfile as _UserProfile, UserRole as _UserRole, _CaffeineStorageRefillInformation as __CaffeineStorageRefillInformation, _CaffeineStorageRefillResult as __CaffeineStorageRefillResult } from "./declarations/backend.did.d.ts";
 export class Backend implements backendInterface {
     constructor(private actor: ActorSubclass<_SERVICE>, private _uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, private _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, private processError?: (error: unknown) => never){}
     async _caffeineStorageBlobIsLive(arg0: Uint8Array): Promise<boolean> {
@@ -335,6 +411,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async addCloseFriend(arg0: Principal): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.addCloseFriend(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.addCloseFriend(arg0);
+            return result;
+        }
+    }
     async addGroupMember(arg0: string, arg1: Principal): Promise<void> {
         if (this.processError) {
             try {
@@ -360,6 +450,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.addReaction(arg0, arg1, arg2);
+            return result;
+        }
+    }
+    async addToHighlights(arg0: string, arg1: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.addToHighlights(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.addToHighlights(arg0, arg1);
             return result;
         }
     }
@@ -391,6 +495,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async createChannel(arg0: string, arg1: string, arg2: string, arg3: boolean): Promise<string> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.createChannel(arg0, arg1, arg2, arg3);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.createChannel(arg0, arg1, arg2, arg3);
+            return result;
+        }
+    }
     async createGroupChat(arg0: string, arg1: string, arg2: Array<Principal>): Promise<string> {
         if (this.processError) {
             try {
@@ -416,6 +534,34 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.createOrUpdateUserProfile(arg0);
+            return result;
+        }
+    }
+    async createStatus(arg0: string, arg1: string, arg2: string, arg3: string): Promise<Status> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.createStatus(arg0, arg1, arg2, arg3);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.createStatus(arg0, arg1, arg2, arg3);
+            return result;
+        }
+    }
+    async createStory(arg0: string, arg1: string, arg2: string, arg3: boolean): Promise<Story> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.createStory(arg0, arg1, arg2, arg3);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.createStory(arg0, arg1, arg2, arg3);
             return result;
         }
     }
@@ -461,6 +607,34 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async deleteStatus(arg0: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.deleteStatus(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.deleteStatus(arg0);
+            return result;
+        }
+    }
+    async deleteStory(arg0: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.deleteStory(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.deleteStory(arg0);
+            return result;
+        }
+    }
     async deleteTemporaryFolder(arg0: string): Promise<void> {
         if (this.processError) {
             try {
@@ -503,6 +677,34 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async generateChannelInviteLink(arg0: string): Promise<string> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.generateChannelInviteLink(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.generateChannelInviteLink(arg0);
+            return result;
+        }
+    }
+    async generateGroupInviteLink(arg0: string): Promise<string> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.generateGroupInviteLink(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.generateGroupInviteLink(arg0);
+            return result;
+        }
+    }
     async getCallerUserProfile(): Promise<UserProfile | null> {
         if (this.processError) {
             try {
@@ -531,18 +733,60 @@ export class Backend implements backendInterface {
             return from_candid_UserRole_n11(this._uploadFile, this._downloadFile, result);
         }
     }
-    async getChatById(arg0: string): Promise<Chat | null> {
+    async getChannelById(arg0: string): Promise<Channel | null> {
         if (this.processError) {
             try {
-                const result = await this.actor.getChatById(arg0);
+                const result = await this.actor.getChannelById(arg0);
                 return from_candid_opt_n13(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.getChatById(arg0);
+            const result = await this.actor.getChannelById(arg0);
             return from_candid_opt_n13(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async getChannelMessages(arg0: string, arg1: bigint): Promise<Array<Message>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getChannelMessages(arg0, arg1);
+                return from_candid_vec_n17(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getChannelMessages(arg0, arg1);
+            return from_candid_vec_n17(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async getChannels(): Promise<Array<Channel>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getChannels();
+                return from_candid_vec_n23(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getChannels();
+            return from_candid_vec_n23(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async getChatById(arg0: string): Promise<Chat | null> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getChatById(arg0);
+                return from_candid_opt_n24(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getChatById(arg0);
+            return from_candid_opt_n24(this._uploadFile, this._downloadFile, result);
         }
     }
     async getChatMessages(arg0: string, arg1: bigint): Promise<Array<Message>> {
@@ -557,6 +801,20 @@ export class Backend implements backendInterface {
         } else {
             const result = await this.actor.getChatMessages(arg0, arg1);
             return from_candid_vec_n17(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async getCloseFriends(): Promise<Array<UserProfile>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getCloseFriends();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getCloseFriends();
+            return result;
         }
     }
     async getEmailByPhoneNumber(arg0: string): Promise<string> {
@@ -577,14 +835,14 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.getGroupById(arg0);
-                return from_candid_opt_n23(this._uploadFile, this._downloadFile, result);
+                return from_candid_opt_n27(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getGroupById(arg0);
-            return from_candid_opt_n23(this._uploadFile, this._downloadFile, result);
+            return from_candid_opt_n27(this._uploadFile, this._downloadFile, result);
         }
     }
     async getGroupMessages(arg0: string, arg1: bigint): Promise<Array<Message>> {
@@ -601,6 +859,20 @@ export class Backend implements backendInterface {
             return from_candid_vec_n17(this._uploadFile, this._downloadFile, result);
         }
     }
+    async getHighlights(arg0: Principal): Promise<Array<Story>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getHighlights(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getHighlights(arg0);
+            return result;
+        }
+    }
     async getLifestyleChoices(): Promise<Array<string>> {
         if (this.processError) {
             try {
@@ -615,46 +887,88 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async getMyChannels(): Promise<Array<Channel>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getMyChannels();
+                return from_candid_vec_n23(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getMyChannels();
+            return from_candid_vec_n23(this._uploadFile, this._downloadFile, result);
+        }
+    }
     async getMyChats(): Promise<Array<Chat>> {
         if (this.processError) {
             try {
                 const result = await this.actor.getMyChats();
-                return from_candid_vec_n27(this._uploadFile, this._downloadFile, result);
+                return from_candid_vec_n31(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getMyChats();
-            return from_candid_vec_n27(this._uploadFile, this._downloadFile, result);
+            return from_candid_vec_n31(this._uploadFile, this._downloadFile, result);
         }
     }
     async getMyGroupChats(): Promise<Array<GroupChat>> {
         if (this.processError) {
             try {
                 const result = await this.actor.getMyGroupChats();
-                return from_candid_vec_n28(this._uploadFile, this._downloadFile, result);
+                return from_candid_vec_n32(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getMyGroupChats();
-            return from_candid_vec_n28(this._uploadFile, this._downloadFile, result);
+            return from_candid_vec_n32(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async getMyStatuses(): Promise<Array<Status>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getMyStatuses();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getMyStatuses();
+            return result;
+        }
+    }
+    async getMyStories(): Promise<Array<Story>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getMyStories();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getMyStories();
+            return result;
         }
     }
     async getOrCreateChat(arg0: Principal): Promise<Chat> {
         if (this.processError) {
             try {
                 const result = await this.actor.getOrCreateChat(arg0);
-                return from_candid_Chat_n14(this._uploadFile, this._downloadFile, result);
+                return from_candid_Chat_n25(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getOrCreateChat(arg0);
-            return from_candid_Chat_n14(this._uploadFile, this._downloadFile, result);
+            return from_candid_Chat_n25(this._uploadFile, this._downloadFile, result);
         }
     }
     async getPersonalityTypes(): Promise<Array<string>> {
@@ -682,6 +996,48 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.getRelationshipStatuses();
+            return result;
+        }
+    }
+    async getStatusFeed(): Promise<Array<Status>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getStatusFeed();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getStatusFeed();
+            return result;
+        }
+    }
+    async getStoriesByUser(arg0: Principal): Promise<Array<Story>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getStoriesByUser(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getStoriesByUser(arg0);
+            return result;
+        }
+    }
+    async getStoriesForFeed(): Promise<Array<[Principal, Array<Story>]>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getStoriesForFeed();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getStoriesForFeed();
             return result;
         }
     }
@@ -755,6 +1111,62 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async joinChannel(arg0: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.joinChannel(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.joinChannel(arg0);
+            return result;
+        }
+    }
+    async joinChannelByInviteLink(arg0: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.joinChannelByInviteLink(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.joinChannelByInviteLink(arg0);
+            return result;
+        }
+    }
+    async joinGroupByInviteLink(arg0: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.joinGroupByInviteLink(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.joinGroupByInviteLink(arg0);
+            return result;
+        }
+    }
+    async leaveChannel(arg0: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.leaveChannel(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.leaveChannel(arg0);
+            return result;
+        }
+    }
     async leaveGroup(arg0: string): Promise<void> {
         if (this.processError) {
             try {
@@ -794,6 +1206,90 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.markMessagesSeen(arg0);
+            return result;
+        }
+    }
+    async markStatusViewed(arg0: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.markStatusViewed(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.markStatusViewed(arg0);
+            return result;
+        }
+    }
+    async markStoryViewed(arg0: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.markStoryViewed(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.markStoryViewed(arg0);
+            return result;
+        }
+    }
+    async pinMessageInChannel(arg0: string, arg1: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.pinMessageInChannel(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.pinMessageInChannel(arg0, arg1);
+            return result;
+        }
+    }
+    async postToChannel(arg0: string, arg1: string, arg2: string, arg3: string): Promise<Message> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.postToChannel(arg0, arg1, arg2, arg3);
+                return from_candid_Message_n18(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.postToChannel(arg0, arg1, arg2, arg3);
+            return from_candid_Message_n18(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async reactToStory(arg0: string, arg1: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.reactToStory(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.reactToStory(arg0, arg1);
+            return result;
+        }
+    }
+    async removeCloseFriend(arg0: Principal): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.removeCloseFriend(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.removeCloseFriend(arg0);
             return result;
         }
     }
@@ -923,6 +1419,20 @@ export class Backend implements backendInterface {
             return from_candid_Message_n18(this._uploadFile, this._downloadFile, result);
         }
     }
+    async setGroupSlowMode(arg0: string, arg1: bigint): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.setGroupSlowMode(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.setGroupSlowMode(arg0, arg1);
+            return result;
+        }
+    }
     async setGroupTypingStatus(arg0: string, arg1: boolean): Promise<void> {
         if (this.processError) {
             try {
@@ -1035,6 +1545,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async updateChannelInfo(arg0: string, arg1: string, arg2: string, arg3: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.updateChannelInfo(arg0, arg1, arg2, arg3);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.updateChannelInfo(arg0, arg1, arg2, arg3);
+            return result;
+        }
+    }
     async updateGroupInfo(arg0: string, arg1: string, arg2: string): Promise<void> {
         if (this.processError) {
             try {
@@ -1078,11 +1602,14 @@ export class Backend implements backendInterface {
         }
     }
 }
-function from_candid_Chat_n14(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _Chat): Chat {
+function from_candid_Channel_n14(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _Channel): Channel {
     return from_candid_record_n15(_uploadFile, _downloadFile, value);
 }
-function from_candid_GroupChat_n24(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _GroupChat): GroupChat {
-    return from_candid_record_n25(_uploadFile, _downloadFile, value);
+function from_candid_Chat_n25(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _Chat): Chat {
+    return from_candid_record_n26(_uploadFile, _downloadFile, value);
+}
+function from_candid_GroupChat_n28(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _GroupChat): GroupChat {
+    return from_candid_record_n29(_uploadFile, _downloadFile, value);
 }
 function from_candid_MessageType_n20(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _MessageType): MessageType {
     return from_candid_variant_n21(_uploadFile, _downloadFile, value);
@@ -1099,8 +1626,8 @@ function from_candid__CaffeineStorageRefillResult_n4(_uploadFile: (file: Externa
 function from_candid_opt_n10(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_UserProfile]): UserProfile | null {
     return value.length === 0 ? null : value[0];
 }
-function from_candid_opt_n13(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_Chat]): Chat | null {
-    return value.length === 0 ? null : from_candid_Chat_n14(_uploadFile, _downloadFile, value[0]);
+function from_candid_opt_n13(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_Channel]): Channel | null {
+    return value.length === 0 ? null : from_candid_Channel_n14(_uploadFile, _downloadFile, value[0]);
 }
 function from_candid_opt_n16(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_MessageId]): MessageId | null {
     return value.length === 0 ? null : value[0];
@@ -1108,10 +1635,13 @@ function from_candid_opt_n16(_uploadFile: (file: ExternalBlob) => Promise<Uint8A
 function from_candid_opt_n22(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_Timestamp]): Timestamp | null {
     return value.length === 0 ? null : value[0];
 }
-function from_candid_opt_n23(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_GroupChat]): GroupChat | null {
-    return value.length === 0 ? null : from_candid_GroupChat_n24(_uploadFile, _downloadFile, value[0]);
+function from_candid_opt_n24(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_Chat]): Chat | null {
+    return value.length === 0 ? null : from_candid_Chat_n25(_uploadFile, _downloadFile, value[0]);
 }
-function from_candid_opt_n26(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [string]): string | null {
+function from_candid_opt_n27(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_GroupChat]): GroupChat | null {
+    return value.length === 0 ? null : from_candid_GroupChat_n28(_uploadFile, _downloadFile, value[0]);
+}
+function from_candid_opt_n30(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [string]): string | null {
     return value.length === 0 ? null : value[0];
 }
 function from_candid_opt_n6(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [boolean]): boolean | null {
@@ -1121,36 +1651,42 @@ function from_candid_opt_n7(_uploadFile: (file: ExternalBlob) => Promise<Uint8Ar
     return value.length === 0 ? null : value[0];
 }
 function from_candid_record_n15(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
-    muted: Array<[string, boolean]>;
-    participants: Array<_UserId>;
-    vanishMode: boolean;
+    id: _ChannelId;
+    name: string;
     createdAt: _Timestamp;
-    lastMessage: [] | [_MessageId];
-    lastUpdated: _Timestamp;
-    typing: Array<[string, boolean]>;
-    pinned: Array<[string, boolean]>;
-    archived: Array<[string, boolean]>;
+    description: string;
+    subscribers: Array<_UserId>;
+    inviteLink: string;
+    isPublic: boolean;
+    adminId: _UserId;
+    slowModeSecs: bigint;
+    rules: string;
+    pinnedMessageId: [] | [_MessageId];
 }): {
-    muted: Array<[string, boolean]>;
-    participants: Array<UserId>;
-    vanishMode: boolean;
+    id: ChannelId;
+    name: string;
     createdAt: Timestamp;
-    lastMessage?: MessageId;
-    lastUpdated: Timestamp;
-    typing: Array<[string, boolean]>;
-    pinned: Array<[string, boolean]>;
-    archived: Array<[string, boolean]>;
+    description: string;
+    subscribers: Array<UserId>;
+    inviteLink: string;
+    isPublic: boolean;
+    adminId: UserId;
+    slowModeSecs: bigint;
+    rules: string;
+    pinnedMessageId?: MessageId;
 } {
     return {
-        muted: value.muted,
-        participants: value.participants,
-        vanishMode: value.vanishMode,
+        id: value.id,
+        name: value.name,
         createdAt: value.createdAt,
-        lastMessage: record_opt_to_undefined(from_candid_opt_n16(_uploadFile, _downloadFile, value.lastMessage)),
-        lastUpdated: value.lastUpdated,
-        typing: value.typing,
-        pinned: value.pinned,
-        archived: value.archived
+        description: value.description,
+        subscribers: value.subscribers,
+        inviteLink: value.inviteLink,
+        isPublic: value.isPublic,
+        adminId: value.adminId,
+        slowModeSecs: value.slowModeSecs,
+        rules: value.rules,
+        pinnedMessageId: record_opt_to_undefined(from_candid_opt_n16(_uploadFile, _downloadFile, value.pinnedMessageId))
     };
 }
 function from_candid_record_n19(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
@@ -1195,15 +1731,50 @@ function from_candid_record_n19(_uploadFile: (file: ExternalBlob) => Promise<Uin
         senderId: value.senderId
     };
 }
-function from_candid_record_n25(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_record_n26(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    muted: Array<[string, boolean]>;
+    participants: Array<_UserId>;
+    vanishMode: boolean;
+    createdAt: _Timestamp;
+    lastMessage: [] | [_MessageId];
+    lastUpdated: _Timestamp;
+    typing: Array<[string, boolean]>;
+    pinned: Array<[string, boolean]>;
+    archived: Array<[string, boolean]>;
+}): {
+    muted: Array<[string, boolean]>;
+    participants: Array<UserId>;
+    vanishMode: boolean;
+    createdAt: Timestamp;
+    lastMessage?: MessageId;
+    lastUpdated: Timestamp;
+    typing: Array<[string, boolean]>;
+    pinned: Array<[string, boolean]>;
+    archived: Array<[string, boolean]>;
+} {
+    return {
+        muted: value.muted,
+        participants: value.participants,
+        vanishMode: value.vanishMode,
+        createdAt: value.createdAt,
+        lastMessage: record_opt_to_undefined(from_candid_opt_n16(_uploadFile, _downloadFile, value.lastMessage)),
+        lastUpdated: value.lastUpdated,
+        typing: value.typing,
+        pinned: value.pinned,
+        archived: value.archived
+    };
+}
+function from_candid_record_n29(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     id: string;
     members: Array<_UserId>;
     name: string;
     createdAt: _Timestamp;
     lastMessage: [] | [string];
     lastUpdated: _Timestamp;
+    slowMode: bigint;
     typing: Array<[string, boolean]>;
     description: string;
+    inviteLink: string;
     adminId: _UserId;
 }): {
     id: string;
@@ -1212,8 +1783,10 @@ function from_candid_record_n25(_uploadFile: (file: ExternalBlob) => Promise<Uin
     createdAt: Timestamp;
     lastMessage?: string;
     lastUpdated: Timestamp;
+    slowMode: bigint;
     typing: Array<[string, boolean]>;
     description: string;
+    inviteLink: string;
     adminId: UserId;
 } {
     return {
@@ -1221,10 +1794,12 @@ function from_candid_record_n25(_uploadFile: (file: ExternalBlob) => Promise<Uin
         members: value.members,
         name: value.name,
         createdAt: value.createdAt,
-        lastMessage: record_opt_to_undefined(from_candid_opt_n26(_uploadFile, _downloadFile, value.lastMessage)),
+        lastMessage: record_opt_to_undefined(from_candid_opt_n30(_uploadFile, _downloadFile, value.lastMessage)),
         lastUpdated: value.lastUpdated,
+        slowMode: value.slowMode,
         typing: value.typing,
         description: value.description,
+        inviteLink: value.inviteLink,
         adminId: value.adminId
     };
 }
@@ -1267,11 +1842,14 @@ function from_candid_variant_n21(_uploadFile: (file: ExternalBlob) => Promise<Ui
 function from_candid_vec_n17(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_Message>): Array<Message> {
     return value.map((x)=>from_candid_Message_n18(_uploadFile, _downloadFile, x));
 }
-function from_candid_vec_n27(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_Chat>): Array<Chat> {
-    return value.map((x)=>from_candid_Chat_n14(_uploadFile, _downloadFile, x));
+function from_candid_vec_n23(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_Channel>): Array<Channel> {
+    return value.map((x)=>from_candid_Channel_n14(_uploadFile, _downloadFile, x));
 }
-function from_candid_vec_n28(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_GroupChat>): Array<GroupChat> {
-    return value.map((x)=>from_candid_GroupChat_n24(_uploadFile, _downloadFile, x));
+function from_candid_vec_n31(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_Chat>): Array<Chat> {
+    return value.map((x)=>from_candid_Chat_n25(_uploadFile, _downloadFile, x));
+}
+function from_candid_vec_n32(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_GroupChat>): Array<GroupChat> {
+    return value.map((x)=>from_candid_GroupChat_n28(_uploadFile, _downloadFile, x));
 }
 function to_candid_UserRole_n8(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: UserRole): _UserRole {
     return to_candid_variant_n9(_uploadFile, _downloadFile, value);

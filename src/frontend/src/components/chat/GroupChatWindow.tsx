@@ -35,10 +35,13 @@ import {
   Bell,
   Bold,
   CalendarClock,
+  Clock,
+  Copy,
   Crown,
   Image,
   Images,
   Info,
+  Link,
   Loader2,
   LogOut,
   Mic,
@@ -56,6 +59,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
+import { useActor } from "../../hooks/useActor";
 import {
   type GroupRole,
   type Poll,
@@ -98,6 +102,7 @@ export function GroupChatWindow({ group, onBack }: GroupChatWindowProps) {
     reactToMessage,
   } = useChat();
   const { currentUser } = useAuth();
+  const { actor } = useActor();
 
   const [inputText, setInputText] = useState("");
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
@@ -119,6 +124,13 @@ export function GroupChatWindow({ group, onBack }: GroupChatWindowProps) {
   const [scheduledAt, setScheduledAt] = useState("");
   const [threadParent, setThreadParent] = useState<Message | null>(null);
   const [announcements, setAnnouncements] = useState<string[]>([]);
+  // Invite link & slow mode
+  const [inviteLink, setInviteLink] = useState(group.inviteLink ?? "");
+  const [isGeneratingLink, setIsGeneratingLink] = useState(false);
+  const [slowModeSecs, setSlowModeSecs] = useState<number>(
+    Number(group.slowMode ?? 0n),
+  );
+  const [isSavingSlowMode, setIsSavingSlowMode] = useState(false);
   const [dismissedAnnouncement, setDismissedAnnouncement] = useState(false);
   const [groupRoles, setGroupRoles] = useState<Record<string, GroupRole>>({});
   const [reportingMessage, setReportingMessage] = useState<
@@ -1110,7 +1122,7 @@ export function GroupChatWindow({ group, onBack }: GroupChatWindowProps) {
 
           {/* Group Info Dialog */}
           <Dialog open={showInfo} onOpenChange={setShowInfo}>
-            <DialogContent className="rounded-2xl max-w-sm">
+            <DialogContent className="rounded-2xl max-w-sm max-h-[90dvh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
                   <Users size={16} className="text-primary" />
@@ -1122,13 +1134,134 @@ export function GroupChatWindow({ group, onBack }: GroupChatWindowProps) {
                   {group.description}
                 </p>
               )}
+
+              {/* Invite Link section */}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                  <Link size={11} />
+                  Invite Link
+                </p>
+                {inviteLink ? (
+                  <div className="flex items-center gap-2 p-2.5 rounded-xl bg-muted/50 border border-border/60">
+                    <p className="text-xs text-muted-foreground flex-1 truncate font-mono">
+                      {inviteLink}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(inviteLink);
+                        toast.success("Invite link copied!");
+                      }}
+                      className="flex-shrink-0 text-primary hover:text-primary/80 transition-colors"
+                      data-ocid="group.link.button"
+                    >
+                      <Copy size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="rounded-xl gap-1.5 text-xs w-full"
+                    disabled={isGeneratingLink}
+                    onClick={async () => {
+                      if (!actor) return;
+                      setIsGeneratingLink(true);
+                      try {
+                        const link = await actor.generateGroupInviteLink(
+                          group.id,
+                        );
+                        setInviteLink(link);
+                        toast.success("Invite link generated!");
+                      } catch {
+                        toast.error("Failed to generate link");
+                      } finally {
+                        setIsGeneratingLink(false);
+                      }
+                    }}
+                    data-ocid="group.link.button"
+                  >
+                    {isGeneratingLink ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <Link size={12} />
+                    )}
+                    Generate Invite Link
+                  </Button>
+                )}
+              </div>
+
+              {/* Slow Mode (admin only) */}
+              {canManage && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <Clock size={11} />
+                    Slow Mode
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={slowModeSecs}
+                      onChange={(e) => setSlowModeSecs(Number(e.target.value))}
+                      className="flex-1 rounded-xl border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary/40"
+                    >
+                      <option value={0}>Off</option>
+                      <option value={10}>10 seconds</option>
+                      <option value={30}>30 seconds</option>
+                      <option value={60}>1 minute</option>
+                      <option value={300}>5 minutes</option>
+                    </select>
+                    <Button
+                      size="sm"
+                      className="rounded-xl gradient-btn flex-shrink-0"
+                      disabled={isSavingSlowMode}
+                      onClick={async () => {
+                        if (!actor) return;
+                        setIsSavingSlowMode(true);
+                        try {
+                          await actor.setGroupSlowMode(
+                            group.id,
+                            BigInt(slowModeSecs),
+                          );
+                          toast.success(
+                            slowModeSecs === 0
+                              ? "Slow mode disabled"
+                              : `Slow mode set to ${slowModeSecs}s`,
+                          );
+                        } catch {
+                          toast.error("Failed to update slow mode");
+                        } finally {
+                          setIsSavingSlowMode(false);
+                        }
+                      }}
+                      data-ocid="group.save_button"
+                    >
+                      {isSavingSlowMode ? (
+                        <Loader2
+                          size={12}
+                          className="animate-spin text-white"
+                        />
+                      ) : (
+                        <span className="text-white text-xs">Save</span>
+                      )}
+                    </Button>
+                  </div>
+                  {slowModeSecs > 0 && (
+                    <p className="text-[10px] text-muted-foreground">
+                      Members can send 1 message every {slowModeSecs}s
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Members list */}
               <div>
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
                   {group.members.length} Members
                 </p>
-                <ScrollArea className="max-h-60">
+                <ScrollArea className="max-h-48">
                   {group.members.map((uid) => {
                     const member = users[uid];
+                    const role = groupRoles[uid];
                     return (
                       <div key={uid} className="flex items-center gap-3 py-2">
                         <UserAvatar
@@ -1141,12 +1274,22 @@ export function GroupChatWindow({ group, onBack }: GroupChatWindowProps) {
                           <p className="text-sm font-medium truncate">
                             @{member?.username ?? uid.slice(-6)}
                           </p>
-                          {uid === group.adminId && (
-                            <p className="text-xs text-primary">Admin</p>
-                          )}
-                          {uid === currentUid && (
-                            <p className="text-xs text-muted-foreground">You</p>
-                          )}
+                          <div className="flex items-center gap-1.5">
+                            {uid === group.adminId || role === "admin" ? (
+                              <span className="text-xs text-yellow-500 flex items-center gap-0.5">
+                                <Crown size={9} /> Admin
+                              </span>
+                            ) : role === "moderator" ? (
+                              <span className="text-xs text-blue-400 flex items-center gap-0.5">
+                                <Shield size={9} /> Mod
+                              </span>
+                            ) : null}
+                            {uid === currentUid && (
+                              <span className="text-xs text-muted-foreground">
+                                (You)
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );

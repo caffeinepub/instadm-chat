@@ -9,11 +9,11 @@ import Iter "mo:core/Iter";
 import Time "mo:core/Time";
 import MixinStorage "blob-storage/Mixin";
 import MixinAuthorization "authorization/MixinAuthorization";
-
+import Migration "migration";
 import AccessControl "authorization/access-control";
 
 // Use migration with-clause
-
+(with migration = Migration.run)
 actor {
   include MixinStorage();
 
@@ -27,6 +27,9 @@ actor {
   type ChatId = Text;
   type MessageId = Text;
   type GroupId = Text;
+  type ChannelId = Text;
+  type StoryId = Text;
+  type StatusId = Text;
   type MessageType = {
     #text;
     #image;
@@ -65,6 +68,7 @@ actor {
     birthDate : Text;
     timezone : Text;
     websiteUrl : Text;
+    closeFriends : [UserId];
   };
 
   module UserProfile {
@@ -107,6 +111,49 @@ actor {
     lastMessage : ?Text;
     lastUpdated : Timestamp;
     typing : [(Text, Bool)];
+    inviteLink : Text;
+    slowMode : Nat;
+  };
+
+  type Channel = {
+    id : ChannelId;
+    name : Text;
+    description : Text;
+    rules : Text;
+    adminId : UserId;
+    subscribers : [UserId];
+    createdAt : Timestamp;
+    inviteLink : Text;
+    slowModeSecs : Nat;
+    pinnedMessageId : ?MessageId;
+    isPublic : Bool;
+  };
+
+  type Story = {
+    id : StoryId;
+    authorId : UserId;
+    text : Text;
+    mediaUrl : Text;
+    bgColor : Text;
+    createdAt : Timestamp;
+    expiresAt : Timestamp;
+    views : [UserId];
+    reactions : [(Text, [UserId])];
+    isCloseFriends : Bool;
+    isHighlight : Bool;
+    highlightTitle : Text;
+  };
+
+  type Status = {
+    id : StatusId;
+    authorId : UserId;
+    text : Text;
+    bgColor : Text;
+    photoUrl : Text;
+    createdAt : Timestamp;
+    expiresAt : Timestamp;
+    views : [UserId];
+    privacy : Text;
   };
 
   type Message = {
@@ -149,6 +196,10 @@ actor {
   let groupMessages = Map.empty<MessageId, Message>();
   let messageRequests = Map.empty<Text, MessageRequest>();
   let notifications = Map.empty<Text, Notification>();
+  let channels = Map.empty<ChannelId, Channel>();
+  let channelMessages = Map.empty<MessageId, Message>();
+  let stories = Map.empty<StoryId, Story>();
+  let statuses = Map.empty<StatusId, Status>();
 
   let temporaryFolders = Map.empty<Principal, Map.Map<Text, Text>>();
 
@@ -190,6 +241,22 @@ actor {
     };
   };
 
+  func isChannelSubscriber(channelId : ChannelId, userId : UserId) : Bool {
+    switch (channels.get(channelId)) {
+      case (null) { false };
+      case (?channel) {
+        channel.subscribers.find(func(id : UserId) : Bool { id == userId }) != null;
+      };
+    };
+  };
+
+  func isChannelAdmin(channelId : ChannelId, userId : Principal) : Bool {
+    switch (channels.get(channelId)) {
+      case (null) { false };
+      case (?channel) { channel.adminId == userId };
+    };
+  };
+
   func canViewProfile(caller : UserId, targetId : UserId) : Bool {
     if (caller == targetId) { return true };
     if (AccessControl.isAdmin(accessControlState, caller)) { return true };
@@ -201,6 +268,48 @@ actor {
         if (not profile.isPrivate) { return true };
         profile.followers.find(func(id : UserId) : Bool { id == caller }) != null;
       };
+    };
+  };
+
+  func isFollowing(userId : UserId, targetId : UserId) : Bool {
+    switch (users.get(userId)) {
+      case (null) { false };
+      case (?profile) {
+        profile.following.find(func(id : UserId) : Bool { id == targetId }) != null;
+      };
+    };
+  };
+
+  func isCloseFriend(userId : UserId, targetId : UserId) : Bool {
+    switch (users.get(userId)) {
+      case (null) { false };
+      case (?profile) {
+        profile.closeFriends.find(func(id : UserId) : Bool { id == targetId }) != null;
+      };
+    };
+  };
+
+  func canViewStory(caller : UserId, story : Story) : Bool {
+    if (caller == story.authorId) { return true };
+    if (AccessControl.isAdmin(accessControlState, caller)) { return true };
+    if (isBlockedByEither(caller, story.authorId)) { return false };
+    
+    if (story.isCloseFriends) {
+      return isCloseFriend(story.authorId, caller);
+    };
+    
+    return isFollowing(caller, story.authorId);
+  };
+
+  func canViewStatus(caller : UserId, status : Status) : Bool {
+    if (caller == status.authorId) { return true };
+    if (AccessControl.isAdmin(accessControlState, caller)) { return true };
+    if (isBlockedByEither(caller, status.authorId)) { return false };
+    
+    switch (status.privacy) {
+      case ("closefriends") { isCloseFriend(status.authorId, caller) };
+      case ("followers") { isFollowing(caller, status.authorId) };
+      case (_) { true }; // "everyone"
     };
   };
 
@@ -585,8 +694,9 @@ actor {
       let newFollowers = profile.followers.filter(func(id : UserId) : Bool { id != caller });
       let newFollowing = profile.following.filter(func(id : UserId) : Bool { id != caller });
       let newBlockedUsers = profile.blockedUsers.filter(func(id : UserId) : Bool { id != caller });
+      let newCloseFriends = profile.closeFriends.filter(func(id : UserId) : Bool { id != caller });
 
-      if (newFollowers.size() != profile.followers.size() or newFollowing.size() != profile.following.size() or newBlockedUsers.size() != profile.blockedUsers.size()) {
+      if (newFollowers.size() != profile.followers.size() or newFollowing.size() != profile.following.size() or newBlockedUsers.size() != profile.blockedUsers.size() or newCloseFriends.size() != profile.closeFriends.size()) {
         users.add(
           userId,
           {
@@ -594,6 +704,7 @@ actor {
             followers = newFollowers;
             following = newFollowing;
             blockedUsers = newBlockedUsers;
+            closeFriends = newCloseFriends;
           },
         );
       };
@@ -1051,6 +1162,8 @@ actor {
       lastMessage = null;
       lastUpdated = Time.now();
       typing = [];
+      inviteLink = "";
+      slowMode = 0;
     };
 
     groupChats.add(groupId, newGroup);
@@ -1279,6 +1392,651 @@ actor {
         let newTyping = group.typing.filter(func((userId, _) : (Text, Bool)) : Bool { userId != callerText });
         let updatedTyping = newTyping.concat([(callerText, isTyping)]);
         groupChats.add(groupId, { group with typing = updatedTyping });
+      };
+    };
+  };
+
+  // GROUP INVITE LINK FUNCTIONS
+
+  public shared ({ caller }) func generateGroupInviteLink(groupId : Text) : async Text {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can generate invite links");
+    };
+
+    if (not isGroupAdmin(groupId, caller)) {
+      Runtime.trap("Unauthorized: Only group admins can generate invite links");
+    };
+
+    switch (groupChats.get(groupId)) {
+      case (null) { Runtime.trap("Group not found") };
+      case (?group) {
+        let inviteLink = "group_invite_" # groupId # "_" # Int.toText(Time.now());
+        groupChats.add(groupId, { group with inviteLink });
+        inviteLink;
+      };
+    };
+  };
+
+  public shared ({ caller }) func joinGroupByInviteLink(inviteLink : Text) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can join groups");
+    };
+
+    var foundGroup : ?GroupChat = null;
+    for ((groupId, group) in groupChats.entries()) {
+      if (group.inviteLink == inviteLink) {
+        foundGroup := ?group;
+      };
+    };
+
+    switch (foundGroup) {
+      case (null) { Runtime.trap("Invalid invite link") };
+      case (?group) {
+        let alreadyMember = group.members.find(func(id) { id == caller }) != null;
+        if (not alreadyMember) {
+          let newMembers = group.members.concat([caller]);
+          groupChats.add(group.id, { group with members = newMembers });
+        };
+      };
+    };
+  };
+
+  public shared ({ caller }) func setGroupSlowMode(groupId : Text, slowModeSecs : Nat) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can set slow mode");
+    };
+
+    if (not isGroupAdmin(groupId, caller)) {
+      Runtime.trap("Unauthorized: Only group admins can set slow mode");
+    };
+
+    switch (groupChats.get(groupId)) {
+      case (null) { Runtime.trap("Group not found") };
+      case (?group) {
+        groupChats.add(groupId, { group with slowMode = slowModeSecs });
+      };
+    };
+  };
+
+  // CHANNEL FUNCTIONS
+
+  public shared ({ caller }) func createChannel(name : Text, description : Text, rules : Text, isPublic : Bool) : async Text {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can create channels");
+    };
+
+    let channelId = Time.now().toText();
+
+    let newChannel : Channel = {
+      id = channelId;
+      name;
+      description;
+      rules;
+      adminId = caller;
+      subscribers = [caller];
+      createdAt = Time.now();
+      inviteLink = "";
+      slowModeSecs = 0;
+      pinnedMessageId = null;
+      isPublic;
+    };
+
+    channels.add(channelId, newChannel);
+    channelId;
+  };
+
+  public query ({ caller }) func getChannels() : async [Channel] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view channels");
+    };
+
+    channels.values().toArray().filter(func(channel) { channel.isPublic });
+  };
+
+  public query ({ caller }) func getMyChannels() : async [Channel] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view channels");
+    };
+
+    channels.values().toArray().filter(func(channel) { 
+      channel.subscribers.find(func(id) { id == caller }) != null or channel.adminId == caller
+    });
+  };
+
+  public query ({ caller }) func getChannelById(channelId : Text) : async ?Channel {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view channels");
+    };
+
+    switch (channels.get(channelId)) {
+      case (null) { null };
+      case (?channel) {
+        if (channel.isPublic or isChannelSubscriber(channelId, caller) or channel.adminId == caller) {
+          ?channel;
+        } else {
+          null;
+        };
+      };
+    };
+  };
+
+  public shared ({ caller }) func joinChannel(channelId : Text) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can join channels");
+    };
+
+    switch (channels.get(channelId)) {
+      case (null) { Runtime.trap("Channel not found") };
+      case (?channel) {
+        if (not channel.isPublic and channel.adminId != caller) {
+          Runtime.trap("Cannot join private channel without invite");
+        };
+        
+        if (channel.subscribers.find(func(id) { id == caller }) == null) {
+          let newSubscribers = channel.subscribers.concat([caller]);
+          channels.add(channelId, { channel with subscribers = newSubscribers });
+        };
+      };
+    };
+  };
+
+  public shared ({ caller }) func leaveChannel(channelId : Text) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can leave channels");
+    };
+
+    switch (channels.get(channelId)) {
+      case (null) { Runtime.trap("Channel not found") };
+      case (?channel) {
+        if (caller == channel.adminId) {
+          Runtime.trap("Channel admin cannot leave the channel");
+        };
+        
+        channels.add(channelId, {
+          channel with
+          subscribers = channel.subscribers.filter(func(id) { id != caller })
+        });
+      };
+    };
+  };
+
+  public shared ({ caller }) func postToChannel(
+    channelId : Text,
+    text : Text,
+    mediaUrl : Text,
+    messageType : Text,
+  ) : async Message {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can post to channels");
+    };
+
+    if (not isChannelAdmin(channelId, caller)) {
+      Runtime.trap("Unauthorized: Only channel admins can post messages");
+    };
+
+    let msgType : MessageType = switch (messageType) {
+      case ("image") { #image };
+      case ("video") { #video };
+      case ("voice") { #voice };
+      case ("file") { #file };
+      case ("gif") { #gif };
+      case (_) { #text };
+    };
+
+    let timestamp = Time.now();
+    let messageId = channelId # "_" # Int.toText(timestamp);
+
+    let newMessage : Message = {
+      senderId = caller;
+      text = text;
+      mediaUrl = mediaUrl;
+      messageType = msgType;
+      createdAt = timestamp;
+      seenBy = [caller];
+      reactions = [];
+      edited = false;
+      editedAt = null;
+      deletedForEveryone = false;
+      replyTo = null;
+      vanish = false;
+    };
+
+    channelMessages.add(messageId, newMessage);
+    newMessage;
+  };
+
+  public query ({ caller }) func getChannelMessages(channelId : Text, afterTimestamp : Int) : async [Message] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view channel messages");
+    };
+
+    switch (channels.get(channelId)) {
+      case (null) { Runtime.trap("Channel not found") };
+      case (?channel) {
+        if (not channel.isPublic and not isChannelSubscriber(channelId, caller) and channel.adminId != caller) {
+          Runtime.trap("Unauthorized: You must be a subscriber to view messages");
+        };
+      };
+    };
+
+    let allMessages = channelMessages.entries().toArray();
+    let msgs = allMessages.filter(
+      func((id, msg)) {
+        id.startsWith(#text channelId) and msg.createdAt > afterTimestamp and not msg.deletedForEveryone;
+      }
+    );
+
+    msgs.map(func((_, msg)) { msg });
+  };
+
+  public shared ({ caller }) func generateChannelInviteLink(channelId : Text) : async Text {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can generate invite links");
+    };
+
+    if (not isChannelAdmin(channelId, caller)) {
+      Runtime.trap("Unauthorized: Only channel admins can generate invite links");
+    };
+
+    switch (channels.get(channelId)) {
+      case (null) { Runtime.trap("Channel not found") };
+      case (?channel) {
+        let inviteLink = "channel_invite_" # channelId # "_" # Int.toText(Time.now());
+        channels.add(channelId, { channel with inviteLink });
+        inviteLink;
+      };
+    };
+  };
+
+  public shared ({ caller }) func joinChannelByInviteLink(inviteLink : Text) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can join channels");
+    };
+
+    var foundChannel : ?Channel = null;
+    for ((channelId, channel) in channels.entries()) {
+      if (channel.inviteLink == inviteLink) {
+        foundChannel := ?channel;
+      };
+    };
+
+    switch (foundChannel) {
+      case (null) { Runtime.trap("Invalid invite link") };
+      case (?channel) {
+        let alreadySubscriber = channel.subscribers.find(func(id) { id == caller }) != null;
+        if (not alreadySubscriber) {
+          let newSubscribers = channel.subscribers.concat([caller]);
+          channels.add(channel.id, { channel with subscribers = newSubscribers });
+        };
+      };
+    };
+  };
+
+  public shared ({ caller }) func pinMessageInChannel(channelId : Text, messageId : Text) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can pin messages");
+    };
+
+    if (not isChannelAdmin(channelId, caller)) {
+      Runtime.trap("Unauthorized: Only channel admins can pin messages");
+    };
+
+    switch (channels.get(channelId)) {
+      case (null) { Runtime.trap("Channel not found") };
+      case (?channel) {
+        channels.add(channelId, { channel with pinnedMessageId = ?messageId });
+      };
+    };
+  };
+
+  public shared ({ caller }) func updateChannelInfo(
+    channelId : Text,
+    name : Text,
+    description : Text,
+    rules : Text,
+  ) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can update channel info");
+    };
+
+    if (not isChannelAdmin(channelId, caller)) {
+      Runtime.trap("Unauthorized: Only channel admins can update channel info");
+    };
+
+    switch (channels.get(channelId)) {
+      case (null) { Runtime.trap("Channel not found") };
+      case (?channel) {
+        channels.add(channelId, { channel with name; description; rules });
+      };
+    };
+  };
+
+  // STORY FUNCTIONS
+
+  public shared ({ caller }) func createStory(
+    text : Text,
+    mediaUrl : Text,
+    bgColor : Text,
+    isCloseFriends : Bool,
+  ) : async Story {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can create stories");
+    };
+
+    let storyId = caller.toText() # "_" # Int.toText(Time.now());
+    let now = Time.now();
+    let expiresAt = now + (24 * 60 * 60 * 1_000_000_000); // 24 hours in nanoseconds
+
+    let newStory : Story = {
+      id = storyId;
+      authorId = caller;
+      text;
+      mediaUrl;
+      bgColor;
+      createdAt = now;
+      expiresAt;
+      views = [];
+      reactions = [];
+      isCloseFriends;
+      isHighlight = false;
+      highlightTitle = "";
+    };
+
+    stories.add(storyId, newStory);
+    newStory;
+  };
+
+  public query ({ caller }) func getStoriesForFeed() : async [(Principal, [Story])] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view stories");
+    };
+
+    let now = Time.now();
+    let allStories = stories.values().toArray();
+    
+    let validStories = allStories.filter(func(story) {
+      story.createdAt <= now and story.expiresAt > now and not story.isHighlight and canViewStory(caller, story)
+    });
+
+    let grouped = Map.empty<Principal, [Story]>();
+    for (story in validStories.vals()) {
+      let existing = switch (grouped.get(story.authorId)) {
+        case (null) { [] };
+        case (?arr) { arr };
+      };
+      grouped.add(story.authorId, existing.concat([story]));
+    };
+
+    grouped.entries().toArray();
+  };
+
+  public query ({ caller }) func getStoriesByUser(userId : Principal) : async [Story] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view stories");
+    };
+
+    let now = Time.now();
+    let allStories = stories.values().toArray();
+    
+    allStories.filter(func(story) {
+      story.authorId == userId and story.createdAt <= now and story.expiresAt > now and not story.isHighlight and canViewStory(caller, story)
+    });
+  };
+
+  public query ({ caller }) func getMyStories() : async [Story] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view stories");
+    };
+
+    let now = Time.now();
+    let allStories = stories.values().toArray();
+    
+    allStories.filter(func(story) {
+      story.authorId == caller and story.createdAt <= now and story.expiresAt > now and not story.isHighlight
+    });
+  };
+
+  public shared ({ caller }) func markStoryViewed(storyId : Text) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view stories");
+    };
+
+    switch (stories.get(storyId)) {
+      case (null) { Runtime.trap("Story not found") };
+      case (?story) {
+        if (not canViewStory(caller, story)) {
+          Runtime.trap("Unauthorized: You cannot view this story");
+        };
+
+        let alreadyViewed = story.views.find(func(id) { id == caller }) != null;
+        if (not alreadyViewed) {
+          let newViews = story.views.concat([caller]);
+          stories.add(storyId, { story with views = newViews });
+        };
+      };
+    };
+  };
+
+  public shared ({ caller }) func reactToStory(storyId : Text, emoji : Text) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can react to stories");
+    };
+
+    switch (stories.get(storyId)) {
+      case (null) { Runtime.trap("Story not found") };
+      case (?story) {
+        if (not canViewStory(caller, story)) {
+          Runtime.trap("Unauthorized: You cannot react to this story");
+        };
+
+        let newReactions = story.reactions.concat([(emoji, [caller])]);
+        stories.add(storyId, { story with reactions = newReactions });
+      };
+    };
+  };
+
+  public shared ({ caller }) func deleteStory(storyId : Text) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can delete stories");
+    };
+
+    switch (stories.get(storyId)) {
+      case (null) { Runtime.trap("Story not found") };
+      case (?story) {
+        if (story.authorId != caller) {
+          Runtime.trap("Unauthorized: You can only delete your own stories");
+        };
+
+        stories.remove(storyId);
+      };
+    };
+  };
+
+  public shared ({ caller }) func addToHighlights(storyId : Text, highlightTitle : Text) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can add stories to highlights");
+    };
+
+    switch (stories.get(storyId)) {
+      case (null) { Runtime.trap("Story not found") };
+      case (?story) {
+        if (story.authorId != caller) {
+          Runtime.trap("Unauthorized: You can only highlight your own stories");
+        };
+
+        stories.add(storyId, { 
+          story with 
+          isHighlight = true;
+          highlightTitle;
+        });
+      };
+    };
+  };
+
+  public query ({ caller }) func getHighlights(userId : Principal) : async [Story] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view highlights");
+    };
+
+    let allStories = stories.values().toArray();
+    
+    allStories.filter(func(story) {
+      story.authorId == userId and story.isHighlight and canViewStory(caller, story)
+    });
+  };
+
+  // STATUS FUNCTIONS (WhatsApp-style)
+
+  public shared ({ caller }) func createStatus(
+    text : Text,
+    bgColor : Text,
+    photoUrl : Text,
+    privacy : Text,
+  ) : async Status {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can create statuses");
+    };
+
+    let statusId = caller.toText() # "_status_" # Int.toText(Time.now());
+    let now = Time.now();
+    let expiresAt = now + (24 * 60 * 60 * 1_000_000_000); // 24 hours
+
+    let newStatus : Status = {
+      id = statusId;
+      authorId = caller;
+      text;
+      bgColor;
+      photoUrl;
+      createdAt = now;
+      expiresAt;
+      views = [];
+      privacy;
+    };
+
+    statuses.add(statusId, newStatus);
+    newStatus;
+  };
+
+  public query ({ caller }) func getStatusFeed() : async [Status] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view statuses");
+    };
+
+    let now = Time.now();
+    let allStatuses = statuses.values().toArray();
+    
+    allStatuses.filter(func(status) {
+      status.createdAt <= now and status.expiresAt > now and canViewStatus(caller, status)
+    });
+  };
+
+  public query ({ caller }) func getMyStatuses() : async [Status] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view statuses");
+    };
+
+    let now = Time.now();
+    let allStatuses = statuses.values().toArray();
+    
+    allStatuses.filter(func(status) {
+      status.authorId == caller and status.createdAt <= now and status.expiresAt > now
+    });
+  };
+
+  public shared ({ caller }) func markStatusViewed(statusId : Text) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view statuses");
+    };
+
+    switch (statuses.get(statusId)) {
+      case (null) { Runtime.trap("Status not found") };
+      case (?status) {
+        if (not canViewStatus(caller, status)) {
+          Runtime.trap("Unauthorized: You cannot view this status");
+        };
+
+        let alreadyViewed = status.views.find(func(id) { id == caller }) != null;
+        if (not alreadyViewed) {
+          let newViews = status.views.concat([caller]);
+          statuses.add(statusId, { status with views = newViews });
+        };
+      };
+    };
+  };
+
+  public shared ({ caller }) func deleteStatus(statusId : Text) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can delete statuses");
+    };
+
+    switch (statuses.get(statusId)) {
+      case (null) { Runtime.trap("Status not found") };
+      case (?status) {
+        if (status.authorId != caller) {
+          Runtime.trap("Unauthorized: You can only delete your own statuses");
+        };
+
+        statuses.remove(statusId);
+      };
+    };
+  };
+
+  // CLOSE FRIENDS FUNCTIONS
+
+  public shared ({ caller }) func addCloseFriend(userId : Principal) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can add close friends");
+    };
+
+    if (caller == userId) {
+      Runtime.trap("Cannot add yourself as close friend");
+    };
+
+    switch (users.get(caller)) {
+      case (null) { Runtime.trap("User profile not found") };
+      case (?profile) {
+        let alreadyCloseFriend = profile.closeFriends.find(func(id) { id == userId }) != null;
+        if (not alreadyCloseFriend) {
+          let newCloseFriends = profile.closeFriends.concat([userId]);
+          users.add(caller, { profile with closeFriends = newCloseFriends });
+        };
+      };
+    };
+  };
+
+  public shared ({ caller }) func removeCloseFriend(userId : Principal) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can remove close friends");
+    };
+
+    switch (users.get(caller)) {
+      case (null) { Runtime.trap("User profile not found") };
+      case (?profile) {
+        let newCloseFriends = profile.closeFriends.filter(func(id) { id != userId });
+        users.add(caller, { profile with closeFriends = newCloseFriends });
+      };
+    };
+  };
+
+  public query ({ caller }) func getCloseFriends() : async [UserProfile] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view close friends");
+    };
+
+    switch (users.get(caller)) {
+      case (null) { [] };
+      case (?profile) {
+        profile.closeFriends.map(func(userId) {
+          switch (users.get(userId)) {
+            case (null) { null };
+            case (?friendProfile) { ?friendProfile };
+          };
+        }).filter(func(opt) { opt != null }).map(func(opt) {
+          switch (opt) {
+            case (null) { Runtime.trap("Unexpected null") };
+            case (?p) { p };
+          };
+        });
       };
     };
   };

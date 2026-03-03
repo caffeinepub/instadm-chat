@@ -13,14 +13,17 @@ import {
   Hash,
   Loader2,
   Medal,
+  Radio,
   Search,
   TrendingUp,
   Trophy,
   UserCheck,
   UserPlus,
+  Users,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import type { Channel } from "../backend.d";
 import { useAuth } from "../contexts/AuthContext";
 import { useChat } from "../contexts/ChatContext";
 import { useActor } from "../hooks/useActor";
@@ -52,6 +55,11 @@ export function ExplorePage() {
   const [followLoading, setFollowLoading] = useState<Record<string, boolean>>(
     {},
   );
+
+  // Channels state
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [isLoadingChannels, setIsLoadingChannels] = useState(false);
+  const [joiningChannel, setJoiningChannel] = useState<string | null>(null);
 
   // Enable scrolling
   useEffect(() => {
@@ -133,6 +141,61 @@ export function ExplorePage() {
       .slice(0, 10);
     setTrendingHashtags(sorted);
   }, []);
+
+  // Fetch public channels
+  useEffect(() => {
+    if (!actor) return;
+    setIsLoadingChannels(true);
+    actor
+      .getChannels()
+      .then((ch) => setChannels(ch))
+      .catch(() => {})
+      .finally(() => setIsLoadingChannels(false));
+  }, [actor]);
+
+  const handleJoinChannel = async (channelId: string) => {
+    if (!actor) return;
+    setJoiningChannel(channelId);
+    try {
+      await actor.joinChannel(channelId);
+      setChannels((prev) =>
+        prev.map((c) =>
+          c.id === channelId
+            ? {
+                ...c,
+                subscribers: [
+                  ...c.subscribers,
+                  {
+                    toString: () => currentUser!.uid,
+                  } as Channel["subscribers"][0],
+                ],
+              }
+            : c,
+        ),
+      );
+      toast.success("Joined channel!");
+    } catch {
+      toast.error("Failed to join channel");
+    } finally {
+      setJoiningChannel(null);
+    }
+  };
+
+  const getChannelGradient = (name: string) => {
+    const gradients = [
+      "linear-gradient(135deg,#e1306c,#833ab4)",
+      "linear-gradient(135deg,#1a73e8,#0d47a1)",
+      "linear-gradient(135deg,#f46b45,#eea849)",
+      "linear-gradient(135deg,#1a8a2e,#3ab54a)",
+      "linear-gradient(135deg,#6c3483,#a569bd)",
+      "linear-gradient(135deg,#00838f,#00bcd4)",
+    ];
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+      hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
+    }
+    return gradients[Math.abs(hash) % gradients.length];
+  };
 
   const handleSearch = useCallback(
     (q: string) => {
@@ -371,20 +434,28 @@ export function ExplorePage() {
 
         {/* Tabs */}
         <Tabs defaultValue="discover">
-          <TabsList className="w-full rounded-xl mb-4 bg-muted/50">
+          <TabsList className="w-full rounded-xl mb-4 bg-muted/50 flex">
             <TabsTrigger value="discover" className="flex-1 rounded-lg text-xs">
-              <Compass size={13} className="mr-1.5" />
+              <Compass size={13} className="mr-1" />
               Discover
             </TabsTrigger>
             <TabsTrigger value="for-you" className="flex-1 rounded-lg text-xs">
-              <UserPlus size={13} className="mr-1.5" />
+              <UserPlus size={13} className="mr-1" />
               For You
+            </TabsTrigger>
+            <TabsTrigger
+              value="channels"
+              className="flex-1 rounded-lg text-xs"
+              data-ocid="explore.channels.tab"
+            >
+              <Radio size={13} className="mr-1" />
+              Channels
             </TabsTrigger>
             <TabsTrigger
               value="leaderboard"
               className="flex-1 rounded-lg text-xs"
             >
-              <Trophy size={13} className="mr-1.5" />
+              <Trophy size={13} className="mr-1" />
               Top
             </TabsTrigger>
           </TabsList>
@@ -506,6 +577,103 @@ export function ExplorePage() {
                   {forYouUsers.map((user) => (
                     <UserCard key={user.uid} user={user} />
                   ))}
+                </div>
+              )}
+            </div>
+          </TabsContent>
+
+          {/* Channels tab */}
+          <TabsContent value="channels">
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Radio size={15} className="text-primary" />
+                <h2 className="text-sm font-bold">Public Channels</h2>
+                {!isLoadingChannels && (
+                  <span className="text-xs text-muted-foreground ml-auto">
+                    {channels.length} channels
+                  </span>
+                )}
+              </div>
+
+              {isLoadingChannels ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 size={20} className="animate-spin text-primary" />
+                </div>
+              ) : channels.length === 0 ? (
+                <div
+                  className="text-center py-12"
+                  data-ocid="explore.channels.empty_state"
+                >
+                  <Radio
+                    size={28}
+                    className="mx-auto mb-3 text-muted-foreground/40"
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    No channels yet
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Create a channel from the Channels page
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2" data-ocid="explore.channels.list">
+                  {channels.map((channel, idx) => {
+                    const isJoined = channel.subscribers.some(
+                      (s) => s.toString() === currentUser?.uid,
+                    );
+                    return (
+                      <div
+                        key={channel.id}
+                        className="flex items-center gap-3 p-3 rounded-xl border border-border/60 bg-card/50 hover:bg-accent/30 transition-colors"
+                        data-ocid={`explore.channels.item.${idx + 1}`}
+                      >
+                        <div
+                          className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm"
+                          style={{
+                            background: getChannelGradient(channel.name),
+                          }}
+                        >
+                          <span className="text-white font-bold text-sm">
+                            {channel.name.slice(0, 1).toUpperCase()}
+                          </span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold truncate">
+                            {channel.name}
+                          </p>
+                          {channel.description && (
+                            <p className="text-xs text-muted-foreground truncate mt-0.5">
+                              {channel.description}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                              <Users size={9} />
+                              {channel.subscribers.length}
+                            </span>
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant={isJoined ? "outline" : "default"}
+                          className={`h-8 px-3 rounded-xl text-xs flex-shrink-0 ${!isJoined ? "gradient-btn" : ""}`}
+                          disabled={joiningChannel === channel.id}
+                          onClick={() =>
+                            !isJoined && handleJoinChannel(channel.id)
+                          }
+                          data-ocid={`explore.channels.button.${idx + 1}`}
+                        >
+                          {joiningChannel === channel.id ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : isJoined ? (
+                            "Joined"
+                          ) : (
+                            <span className="text-white">Join</span>
+                          )}
+                        </Button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

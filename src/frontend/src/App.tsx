@@ -14,7 +14,7 @@ import { ChatProvider } from "./contexts/ChatContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { ArchivePage } from "./pages/ArchivePage";
 import { BookmarksPage } from "./pages/BookmarksPage";
-import { ChannelsPage } from "./pages/ChannelsPage";
+import { ChannelsPageICP } from "./pages/ChannelsPageICP";
 import { ExplorePage } from "./pages/ExplorePage";
 import { FeedPage } from "./pages/FeedPage";
 import { HomePage } from "./pages/HomePage";
@@ -27,6 +27,7 @@ import { ProfilePage } from "./pages/ProfilePage";
 import { PublicRoomsPage } from "./pages/PublicRoomsPage";
 import { SavedMessagesPage } from "./pages/SavedMessagesPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { StatusPage } from "./pages/StatusPage";
 import { UsernameSetupPage } from "./pages/UsernameSetupPage";
 import {
   applyAccentColor,
@@ -221,7 +222,14 @@ const channelsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/channels",
   beforeLoad: requireAuth,
-  component: ChannelsPage,
+  component: ChannelsPageICP,
+});
+
+const statusRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/status",
+  beforeLoad: requireAuth,
+  component: StatusPage,
 });
 
 // ─── Router ───────────────────────────────────────────────────────────────────
@@ -241,6 +249,7 @@ const routeTree = rootRoute.addChildren([
   roomsRoute,
   savedRoute,
   channelsRoute,
+  statusRoute,
 ]);
 
 const router = createRouter({ routeTree });

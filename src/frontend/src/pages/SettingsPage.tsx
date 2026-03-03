@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { Principal } from "@icp-sdk/core/principal";
 import { useNavigate } from "@tanstack/react-router";
 import {
   Archive,
@@ -30,6 +31,7 @@ import {
   Folder,
   FolderPlus,
   Globe,
+  Heart,
   Link2,
   Loader2,
   Lock,
@@ -54,10 +56,12 @@ import {
 import type React from "react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import type { UserProfile } from "../backend.d";
 import { UserAvatar } from "../components/chat/UserAvatar";
 import { useAuth } from "../contexts/AuthContext";
 import { useChat } from "../contexts/ChatContext";
 import { useTheme } from "../contexts/ThemeContext";
+import { useActor } from "../hooks/useActor";
 import { extractPlainBio } from "../services/bioStorageService";
 import {
   ACCENT_COLORS,
@@ -104,6 +108,19 @@ export function SettingsPage() {
   }, []);
   const { users, refreshChats } = useChat();
   const { theme, toggleTheme } = useTheme();
+  const { actor } = useActor();
+
+  // Close friends
+  const [closeFriends, setCloseFriendsState] = useState<UserProfile[]>([]);
+  const [isLoadingCF, setIsLoadingCF] = useState(false);
+
+  useEffect(() => {
+    if (!actor) return;
+    actor
+      .getCloseFriends()
+      .then((friends) => setCloseFriendsState(friends))
+      .catch(() => {});
+  }, [actor]);
 
   const [bio, setBio] = useState(() => extractPlainBio(currentUser?.bio ?? ""));
   const [profilePicture, setProfilePicture] = useState(
@@ -996,6 +1013,79 @@ export function SettingsPage() {
                 </Button>
               </div>
             )}
+          </div>
+        </SettingSection>
+
+        <Separator />
+
+        {/* Close Friends */}
+        <SettingSection
+          title="Close Friends"
+          icon={<Heart size={13} />}
+          description="People you share close-friends-only stories with"
+        >
+          <div className="px-5 pb-4 space-y-3">
+            {isLoadingCF ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 size={12} className="animate-spin" />
+                Loading...
+              </div>
+            ) : closeFriends.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                No close friends yet. Visit someone's profile to add them.
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                {closeFriends.map((friend) => (
+                  <div
+                    key={friend._id.toString()}
+                    className="flex items-center gap-3 p-2.5 rounded-xl bg-muted/30 border border-border/60"
+                  >
+                    <UserAvatar
+                      src={friend.profilePicture}
+                      username={friend.username}
+                      size="sm"
+                      showOnline={false}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        @{friend.username}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isLoadingCF}
+                      onClick={async () => {
+                        if (!actor) return;
+                        setIsLoadingCF(true);
+                        try {
+                          await actor.removeCloseFriend(
+                            Principal.fromText(friend._id.toString()),
+                          );
+                          setCloseFriendsState((prev) =>
+                            prev.filter(
+                              (f) => f._id.toString() !== friend._id.toString(),
+                            ),
+                          );
+                          toast.success("Removed from close friends");
+                        } catch {
+                          toast.error("Failed to remove");
+                        } finally {
+                          setIsLoadingCF(false);
+                        }
+                      }}
+                      className="text-muted-foreground hover:text-destructive transition-colors p-1 flex-shrink-0"
+                      data-ocid="settings.delete_button"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="text-[10px] text-muted-foreground">
+              Close friends see exclusive stories marked with 💚
+            </p>
           </div>
         </SettingSection>
 
