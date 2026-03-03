@@ -78,12 +78,37 @@ export function FeedPage() {
         const localPosts = getPosts();
 
         if (actor) {
-          // Fetch all users from ICP backend
-          const allUsers = await actor.searchUsersByUsername("");
+          // Fetch ALL users in parallel using alphabet prefix search
+          // This ensures we catch every registered user regardless of username
+          const alphabetLetters = "abcdefghijklmnopqrstuvwxyz0123456789".split(
+            "",
+          );
+          const searchResults = await Promise.allSettled([
+            actor.searchUsersByUsername(""), // catch-all for short usernames
+            ...alphabetLetters.map((letter) =>
+              actor.searchUsersByUsernamePrefix(letter),
+            ),
+          ]);
+
+          // Deduplicate users by their principal ID
+          const seenUids = new Set<string>();
+          const allProfiles: import("../backend.d").UserProfile[] = [];
+          for (const result of searchResults) {
+            if (result.status === "fulfilled") {
+              for (const profile of result.value) {
+                const uid = profile._id?.toString();
+                if (uid && !seenUids.has(uid)) {
+                  seenUids.add(uid);
+                  allProfiles.push(profile);
+                }
+              }
+            }
+          }
+
           const postsPerUser: Post[][] = [localPosts];
 
           // Decode posts from each user's bio
-          for (const profile of allUsers) {
+          for (const profile of allProfiles) {
             const uid = profile._id?.toString();
             if (!uid || uid === currentUser?.uid) continue;
             const rawBio = profile.bio ?? "";
@@ -108,13 +133,13 @@ export function FeedPage() {
     [actor, currentUser?.uid],
   );
 
-  // Initial load + periodic refresh every 8 seconds
+  // Initial load + periodic refresh every 3 seconds for real-time feel
   useEffect(() => {
     loadGlobalFeed(false);
 
     refreshTimerRef.current = setInterval(() => {
       loadGlobalFeed(true);
-    }, 8000);
+    }, 3000);
 
     return () => {
       if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
@@ -299,6 +324,12 @@ export function FeedPage() {
           >
             Feed
           </h1>
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-500/10 border border-green-500/20">
+            <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+            <span className="text-[10px] font-medium text-green-600 dark:text-green-400">
+              Live
+            </span>
+          </div>
         </div>
         <Button
           variant="ghost"

@@ -133,9 +133,20 @@ export function ChannelsPageICP() {
     }
   }, [actor]);
 
+  const channelPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   useEffect(() => {
     setIsLoading(true);
     loadChannels().finally(() => setIsLoading(false));
+
+    // Poll channel list every 3 seconds for live subscriber count
+    channelPollRef.current = setInterval(() => {
+      loadChannels();
+    }, 3000);
+
+    return () => {
+      if (channelPollRef.current) clearInterval(channelPollRef.current);
+    };
   }, [loadChannels]);
 
   // Poll messages for active channel

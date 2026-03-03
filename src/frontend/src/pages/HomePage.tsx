@@ -1,4 +1,10 @@
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -10,14 +16,14 @@ import {
   Archive,
   Bell,
   Bookmark,
+  Bookmark as BookmarkIcon,
   Camera,
   Compass,
-  LayoutGrid,
   LogOut,
   MessageCircle,
   MessageSquareDashed,
-  Radio,
-  Settings,
+  MoreHorizontal,
+  StickyNote,
   User,
   Users2,
 } from "lucide-react";
@@ -38,6 +44,7 @@ interface NavItem {
   action: () => void;
   isActive?: boolean;
   badge?: number;
+  tooltip?: string;
 }
 
 export function HomePage() {
@@ -56,7 +63,6 @@ export function HomePage() {
     useNotificationPermission();
 
   // Show notification permission prompt on first visit (if not yet asked)
-  // Run once on mount — check localStorage directly to avoid dependency on hook state
   useEffect(() => {
     const notifSupported = typeof Notification !== "undefined" && isSupported;
     if (!notifSupported) return;
@@ -86,11 +92,15 @@ export function HomePage() {
   }, [isSupported, markAsked, requestPermission]);
 
   const handleChatSelect = (chatId: string) => {
+    // Always clear group chat first so ChatWindow renders instead of GroupChatWindow
+    setActiveGroupChatId(null);
     setActiveChatId(chatId);
     setMobileChatOpen(true);
   };
 
   const handleGroupSelect = (groupId: string) => {
+    // Always clear DM chat first so GroupChatWindow renders instead of ChatWindow
+    setActiveChatId(null);
     setActiveGroupChatId(groupId);
     setMobileChatOpen(true);
   };
@@ -99,7 +109,8 @@ export function HomePage() {
     setMobileChatOpen(false);
   };
 
-  const navItems: NavItem[] = [
+  // 6 core primary nav items for desktop + 5 for mobile bottom bar
+  const primaryNavItems: NavItem[] = [
     {
       icon: <MessageCircle size={22} />,
       label: "Messages",
@@ -108,49 +119,55 @@ export function HomePage() {
       badge: unreadCount > 0 ? unreadCount : undefined,
     },
     {
-      icon: <LayoutGrid size={22} />,
-      label: "Feed",
-      action: () => navigate({ to: "/feed" }),
-    },
-    {
       icon: <Camera size={22} />,
-      label: "Status",
+      label: "Stories",
       action: () => navigate({ to: "/status" }),
+      tooltip: "Stories — create & view stories",
     },
     {
       icon: <Compass size={22} />,
-      label: "Explore",
+      label: "Discover",
       action: () => navigate({ to: "/explore" }),
+      tooltip: "Discover — explore & feed",
+    },
+    {
+      icon: <Users2 size={22} />,
+      label: "Community",
+      action: () => navigate({ to: "/channels" }),
+      tooltip: "Community — groups & channels",
     },
     {
       icon: <Bell size={22} />,
       label: "Notifications",
       action: () => navigate({ to: "/notifications" }),
+      badge: unreadCount > 0 ? unreadCount : undefined,
+    },
+  ];
+
+  // Bottom 5 mobile nav items (no duplicate badge)
+  const mobileNavItems: NavItem[] = [
+    {
+      icon: <MessageCircle size={22} />,
+      label: "Messages",
+      action: () => {},
+      isActive: true,
+      badge: unreadCount > 0 ? unreadCount : undefined,
     },
     {
-      icon: <Bookmark size={22} />,
-      label: "Saved",
-      action: () => navigate({ to: "/saved" }),
+      icon: <Camera size={22} />,
+      label: "Stories",
+      action: () => navigate({ to: "/status" }),
     },
     {
-      icon: <Users2 size={22} />,
-      label: "Rooms",
-      action: () => navigate({ to: "/rooms" }),
+      icon: <Compass size={22} />,
+      label: "Discover",
+      action: () => navigate({ to: "/explore" }),
     },
     {
-      icon: <Radio size={22} />,
-      label: "Channels",
-      action: () => navigate({ to: "/channels" }),
-    },
-    {
-      icon: <Archive size={22} />,
-      label: "Archive",
-      action: () => navigate({ to: "/archive" }),
-    },
-    {
-      icon: <Settings size={22} />,
-      label: "Settings",
-      action: () => navigate({ to: "/settings" }),
+      icon: <Bell size={22} />,
+      label: "Alerts",
+      action: () => navigate({ to: "/notifications" }),
+      badge: unreadCount > 0 ? unreadCount : undefined,
     },
     {
       icon: <User size={22} />,
@@ -173,12 +190,13 @@ export function HomePage() {
           </div>
 
           <div className="flex-1 flex flex-col items-center gap-1.5 w-full px-2">
-            {navItems.map((item) => (
+            {primaryNavItems.map((item) => (
               <Tooltip key={item.label}>
                 <TooltipTrigger asChild>
                   <button
                     type="button"
                     onClick={item.action}
+                    data-ocid={`nav.${item.label.toLowerCase()}.button`}
                     className={cn(
                       "relative w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-150",
                       item.isActive
@@ -195,10 +213,79 @@ export function HomePage() {
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="right" className="text-xs">
-                  {item.label}
+                  {item.tooltip ?? item.label}
                 </TooltipContent>
               </Tooltip>
             ))}
+
+            {/* Profile (6th primary item) */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() =>
+                    navigate({ to: `/profile/${currentUser?.username}` })
+                  }
+                  data-ocid="nav.profile.button"
+                  className="relative w-10 h-10 rounded-xl flex items-center justify-center text-muted-foreground hover:bg-sidebar-accent hover:text-foreground transition-all duration-150"
+                >
+                  <User size={22} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="text-xs">
+                Profile
+              </TooltipContent>
+            </Tooltip>
+
+            {/* Overflow / More — collapses secondary nav items */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  data-ocid="nav.more.button"
+                  className="relative w-10 h-10 rounded-xl flex items-center justify-center text-muted-foreground hover:bg-sidebar-accent hover:text-foreground transition-all duration-150"
+                  title="More"
+                >
+                  <MoreHorizontal size={20} />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                side="right"
+                align="start"
+                className="rounded-xl w-44"
+              >
+                <DropdownMenuItem onClick={() => navigate({ to: "/feed" })}>
+                  <Compass size={14} className="mr-2" />
+                  Feed
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate({ to: "/archive" })}>
+                  <Archive size={14} className="mr-2" />
+                  Archive
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate({ to: "/saved" })}>
+                  <BookmarkIcon size={14} className="mr-2" />
+                  Saved Messages
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate({ to: "/notes" })}>
+                  <StickyNote size={14} className="mr-2" />
+                  Notes
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => navigate({ to: "/bookmarks" })}
+                >
+                  <Bookmark size={14} className="mr-2" />
+                  Bookmarks
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate({ to: "/requests" })}>
+                  <MessageCircle size={14} className="mr-2" />
+                  Message Requests
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate({ to: "/settings" })}>
+                  <User size={14} className="mr-2" />
+                  Settings
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {/* Avatar + logout at bottom */}
@@ -229,6 +316,7 @@ export function HomePage() {
                 <button
                   type="button"
                   onClick={logout}
+                  data-ocid="nav.logout.button"
                   className="w-9 h-9 rounded-xl flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
                 >
                   <LogOut size={16} />
@@ -244,7 +332,7 @@ export function HomePage() {
         {/* ── Sidebar (chat list) ── */}
         <div
           className={cn(
-            "w-full md:w-[300px] lg:w-[330px] flex-shrink-0 h-full flex flex-col",
+            "w-full md:w-[320px] lg:w-[340px] flex-shrink-0 h-full flex flex-col",
             mobileChatOpen ? "hidden md:flex" : "flex",
           )}
         >
@@ -253,15 +341,16 @@ export function HomePage() {
             onGroupSelect={handleGroupSelect}
           />
 
-          {/* Mobile bottom nav */}
-          <div className="md:hidden flex items-center justify-around border-t border-border bg-background px-1 py-2 safe-bottom">
-            {navItems.slice(0, 5).map((item) => (
+          {/* Mobile bottom nav — 5 items */}
+          <div className="md:hidden flex items-center justify-around border-t border-border bg-background/95 backdrop-blur-sm px-1 py-1.5 safe-bottom">
+            {mobileNavItems.map((item) => (
               <button
                 type="button"
                 key={item.label}
                 onClick={item.action}
+                data-ocid={`nav.${item.label.toLowerCase()}.button`}
                 className={cn(
-                  "relative flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-colors",
+                  "relative flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl transition-colors min-w-[48px]",
                   item.isActive
                     ? "text-primary"
                     : "text-muted-foreground hover:text-foreground",
@@ -270,7 +359,7 @@ export function HomePage() {
                 {item.icon}
                 <span className="text-[10px] font-medium">{item.label}</span>
                 {item.badge && item.badge > 0 && (
-                  <span className="absolute top-1 right-1 min-w-[14px] h-3.5 bg-destructive text-destructive-foreground rounded-full text-[9px] font-bold flex items-center justify-center px-1">
+                  <span className="absolute top-0.5 right-0.5 min-w-[14px] h-3.5 bg-destructive text-destructive-foreground rounded-full text-[9px] font-bold flex items-center justify-center px-1">
                     {item.badge > 9 ? "9+" : item.badge}
                   </span>
                 )}

@@ -17,6 +17,22 @@ const STATUS_BG_COLORS = [
   { label: "Teal", value: "linear-gradient(135deg,#00838f,#00bcd4)" },
   { label: "Crimson", value: "linear-gradient(135deg,#b71c1c,#e53935)" },
   { label: "Gold", value: "linear-gradient(135deg,#f57f17,#ffca28)" },
+  {
+    label: "Night Sky",
+    value: "linear-gradient(135deg,#0f0c29,#302b63,#24243e)",
+  },
+  { label: "Neon", value: "linear-gradient(135deg,#f953c6,#b91d73)" },
+  { label: "Mint", value: "linear-gradient(135deg,#00b09b,#96c93d)" },
+  { label: "Sky", value: "linear-gradient(135deg,#56ccf2,#2f80ed)" },
+];
+
+const TEXT_COLORS = [
+  { label: "White", value: "#ffffff" },
+  { label: "Black", value: "#000000" },
+  { label: "Yellow", value: "#FFD700" },
+  { label: "Pink", value: "#ff6b9d" },
+  { label: "Cyan", value: "#00e5ff" },
+  { label: "Green", value: "#69ff6e" },
 ];
 
 interface GroupedStories {
@@ -85,7 +101,7 @@ export function StoryBarICP({ className }: StoryBarICPProps) {
 
   useEffect(() => {
     loadStories();
-    pollRef.current = setInterval(loadStories, 30000);
+    pollRef.current = setInterval(loadStories, 15000);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
@@ -348,10 +364,30 @@ function CreateStoryModal({
   onSubmit: () => void;
   onClose: () => void;
 }) {
+  const [fontStyle, setFontStyle] = useState<"normal" | "bold" | "italic">(
+    "normal",
+  );
+  const [textColor, setTextColor] = useState("#ffffff");
+  const [emojiInput, setEmojiInput] = useState("");
+
+  const handleAddEmoji = () => {
+    if (emojiInput.trim()) {
+      onTextChange(text + emojiInput.trim());
+      setEmojiInput("");
+    }
+  };
+
+  const previewTextStyle: React.CSSProperties = {
+    color: textColor,
+    fontWeight: fontStyle === "bold" ? 700 : 400,
+    fontStyle: fontStyle === "italic" ? "italic" : "normal",
+  };
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-4 backdrop-blur-sm">
-      <div className="w-full max-w-sm bg-card rounded-3xl border border-border p-5 space-y-4">
-        <div className="flex items-center justify-between">
+    <div className="fixed inset-0 z-50 bg-black/80 flex items-end sm:items-center justify-center p-4 backdrop-blur-sm">
+      <div className="w-full max-w-sm bg-card rounded-3xl border border-border shadow-2xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-3">
           <h3
             className="font-bold text-base"
             style={{ fontFamily: "'Sora', sans-serif" }}
@@ -361,120 +397,233 @@ function CreateStoryModal({
           <button
             type="button"
             onClick={onClose}
-            className="w-7 h-7 rounded-full bg-muted flex items-center justify-center hover:bg-accent"
+            className="w-7 h-7 rounded-full bg-muted flex items-center justify-center hover:bg-accent transition-colors"
+            data-ocid="story.create.close_button"
           >
             <X size={14} />
           </button>
         </div>
 
-        {/* Preview */}
-        <div
-          className="w-full h-32 rounded-2xl flex items-center justify-center overflow-hidden"
-          style={{ background: mediaFile ? "transparent" : selectedBg }}
-        >
-          {mediaFile ? (
-            <img
-              src={mediaFile}
-              alt="Story preview"
-              className="w-full h-full object-cover rounded-2xl"
-            />
-          ) : (
-            <p className="text-white font-bold text-lg text-center px-4 drop-shadow">
-              {text || "Your story preview"}
-            </p>
-          )}
-        </div>
-
-        <textarea
-          className="w-full rounded-xl border border-border bg-muted/50 px-4 py-3 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-primary/40"
-          placeholder="Add text to your story..."
-          rows={2}
-          value={text}
-          onChange={(e) => onTextChange(e.target.value)}
-          maxLength={200}
-          data-ocid="story.create.textarea"
-        />
-
-        <div>
-          <p className="text-xs text-muted-foreground mb-2">Background</p>
-          <div className="flex gap-2 flex-wrap">
-            {STATUS_BG_COLORS.map((bg) => (
-              <button
-                key={bg.value}
-                type="button"
-                title={bg.label}
-                onClick={() => onBgChange(bg.value)}
-                className={`w-8 h-8 rounded-full flex-shrink-0 transition-all ${
-                  selectedBg === bg.value
-                    ? "ring-2 ring-white ring-offset-2 ring-offset-card scale-110"
-                    : "hover:scale-105"
-                }`}
-                style={{ background: bg.value }}
-              />
-            ))}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border text-xs font-medium hover:bg-accent transition-colors"
-            data-ocid="story.create.upload_button"
+        <div className="px-5 pb-5 space-y-4 overflow-y-auto max-h-[80vh]">
+          {/* Live preview */}
+          <div
+            className="w-full h-36 rounded-2xl flex items-center justify-center overflow-hidden relative"
+            style={{ background: mediaFile ? "#000" : selectedBg }}
           >
-            <Camera size={14} className="text-primary" />
-            Add Photo
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={onMediaSelect}
-          />
-          <div className="flex items-center gap-2 cursor-pointer ml-auto">
-            <span className="text-xs text-muted-foreground">
-              Close Friends only
-            </span>
-            <div
-              role="switch"
-              aria-checked={isCloseFriends}
-              onClick={() => onCloseFriendsChange(!isCloseFriends)}
-              onKeyDown={(e) =>
-                e.key === "Enter" && onCloseFriendsChange(!isCloseFriends)
-              }
-              tabIndex={0}
-              className={`w-9 h-5 rounded-full transition-colors cursor-pointer ${
-                isCloseFriends ? "bg-primary" : "bg-border"
-              } relative`}
-            >
-              <div
-                className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
-                  isCloseFriends ? "left-[18px]" : "left-0.5"
-                }`}
+            {mediaFile ? (
+              <img
+                src={mediaFile}
+                alt="Story preview"
+                className="w-full h-full object-cover"
               />
+            ) : null}
+            {text && (
+              <p
+                className="font-bold text-lg text-center px-4 drop-shadow-lg absolute inset-x-0 bottom-4"
+                style={previewTextStyle}
+              >
+                {text}
+              </p>
+            )}
+            {!mediaFile && !text && (
+              <p className="text-white/50 text-sm">Preview</p>
+            )}
+          </div>
+
+          {/* Text input */}
+          <textarea
+            className="w-full rounded-xl border border-border bg-muted/50 px-4 py-3 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-primary/40 transition-shadow"
+            placeholder="Add text to your story..."
+            rows={2}
+            value={text}
+            onChange={(e) => onTextChange(e.target.value)}
+            maxLength={200}
+            data-ocid="story.create.textarea"
+          />
+
+          {/* Font style picker */}
+          <div>
+            <p className="text-xs text-muted-foreground mb-1.5 font-medium">
+              Font Style
+            </p>
+            <div className="flex gap-1.5">
+              {(["normal", "bold", "italic"] as const).map((style) => (
+                <button
+                  key={style}
+                  type="button"
+                  onClick={() => setFontStyle(style)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border",
+                    fontStyle === style
+                      ? "bg-primary text-white border-primary"
+                      : "bg-muted border-border text-muted-foreground hover:bg-accent",
+                  )}
+                  style={{
+                    fontWeight: style === "bold" ? 700 : 400,
+                    fontStyle: style === "italic" ? "italic" : "normal",
+                  }}
+                >
+                  {style.charAt(0).toUpperCase() + style.slice(1)}
+                </button>
+              ))}
             </div>
           </div>
-        </div>
 
-        <div className="flex gap-2 pt-1">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl border border-border text-sm font-medium hover:bg-accent transition-colors"
-            data-ocid="story.create.cancel_button"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onSubmit}
-            disabled={(!text.trim() && !mediaFile) || isCreating}
-            className="flex-1 py-2.5 rounded-xl gradient-btn text-white text-sm font-semibold disabled:opacity-50"
-            data-ocid="story.create.submit_button"
-          >
-            {isCreating ? "Sharing..." : "Share Story"}
-          </button>
+          {/* Text color picker */}
+          <div>
+            <p className="text-xs text-muted-foreground mb-1.5 font-medium">
+              Text Color
+            </p>
+            <div className="flex gap-2 flex-wrap">
+              {TEXT_COLORS.map((c) => (
+                <button
+                  key={c.value}
+                  type="button"
+                  title={c.label}
+                  onClick={() => setTextColor(c.value)}
+                  className={cn(
+                    "w-7 h-7 rounded-full transition-all border-2",
+                    textColor === c.value
+                      ? "ring-2 ring-primary ring-offset-2 ring-offset-card scale-110"
+                      : "border-transparent hover:scale-105",
+                  )}
+                  style={{
+                    background: c.value,
+                    borderColor: c.value === "#ffffff" ? "#ccc" : c.value,
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Background */}
+          <div>
+            <p className="text-xs text-muted-foreground mb-1.5 font-medium">
+              Background
+            </p>
+            <div className="flex gap-2 flex-wrap">
+              {STATUS_BG_COLORS.map((bg) => (
+                <button
+                  key={bg.value}
+                  type="button"
+                  title={bg.label}
+                  onClick={() => onBgChange(bg.value)}
+                  className={cn(
+                    "w-8 h-8 rounded-full flex-shrink-0 transition-all",
+                    selectedBg === bg.value
+                      ? "ring-2 ring-white ring-offset-2 ring-offset-card scale-110"
+                      : "hover:scale-105",
+                  )}
+                  style={{ background: bg.value }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Emoji overlay */}
+          <div>
+            <p className="text-xs text-muted-foreground mb-1.5 font-medium">
+              Add Emoji / Sticker
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={emojiInput}
+                onChange={(e) => setEmojiInput(e.target.value)}
+                placeholder="😍 🔥 ✨"
+                className="flex-1 rounded-xl border border-border bg-muted/50 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/40"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleAddEmoji();
+                  }
+                }}
+                data-ocid="story.create.input"
+              />
+              <button
+                type="button"
+                onClick={handleAddEmoji}
+                className="px-3 py-2 rounded-xl bg-muted hover:bg-accent text-sm font-medium transition-colors"
+              >
+                Add
+              </button>
+            </div>
+          </div>
+
+          {/* Photo upload + Close Friends toggle */}
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border text-xs font-medium hover:bg-accent transition-colors"
+              data-ocid="story.create.upload_button"
+            >
+              <Camera size={14} className="text-primary" />📷 Add Photo
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={onMediaSelect}
+            />
+            {mediaFile && (
+              <button
+                type="button"
+                onClick={() => {}}
+                className="text-xs text-destructive hover:underline"
+              >
+                Remove photo
+              </button>
+            )}
+            <div className="flex items-center gap-2 cursor-pointer ml-auto">
+              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                Close Friends
+              </span>
+              <div
+                role="switch"
+                aria-checked={isCloseFriends}
+                onClick={() => onCloseFriendsChange(!isCloseFriends)}
+                onKeyDown={(e) =>
+                  e.key === "Enter" && onCloseFriendsChange(!isCloseFriends)
+                }
+                tabIndex={0}
+                data-ocid="story.create.switch"
+                className={cn(
+                  "w-9 h-5 rounded-full transition-colors cursor-pointer relative flex-shrink-0",
+                  isCloseFriends ? "bg-primary" : "bg-border",
+                )}
+              >
+                <div
+                  className={cn(
+                    "absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all",
+                    isCloseFriends ? "left-[18px]" : "left-0.5",
+                  )}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2.5 rounded-xl border border-border text-sm font-medium hover:bg-accent transition-colors"
+              data-ocid="story.create.cancel_button"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onSubmit}
+              disabled={(!text.trim() && !mediaFile) || isCreating}
+              className="flex-1 py-2.5 rounded-xl gradient-btn text-white text-sm font-semibold disabled:opacity-50 transition-all"
+              data-ocid="story.create.submit_button"
+            >
+              {isCreating ? "Sharing..." : "Share Story"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

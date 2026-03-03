@@ -47,10 +47,8 @@ import {
   Plus,
   Search,
   Send,
-  Smile,
   Square,
   Timer,
-  Undo2,
   VolumeX,
   X,
   Zap,
@@ -185,9 +183,6 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
   const [showThemePicker, setShowThemePicker] = useState(false);
   // Attachment popover (the [+] button)
   const [showAttachMenu, setShowAttachMenu] = useState(false);
-  // Undo send
-  const [undoMsgId, setUndoMsgId] = useState<string | null>(null);
-  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const linkPreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -345,7 +340,6 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
       }
       if (linkPreviewTimerRef.current)
         clearTimeout(linkPreviewTimerRef.current);
-      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
     };
   }, []);
 
@@ -472,13 +466,6 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
             deleteMessageForEveryone(chatId, msg.id).catch(() => {});
           }, selfDestructDelay);
         }
-
-        // Undo send — show for 5 seconds
-        setUndoMsgId(msg.id);
-        if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
-        undoTimerRef.current = setTimeout(() => {
-          setUndoMsgId(null);
-        }, 5000);
       } catch {
         toast.error("Failed to send message");
       } finally {
@@ -1326,29 +1313,6 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
         {isOtherTyping && <TypingIndicator user={otherUser} />}
         <div ref={messagesEndRef} />
       </div>
-
-      {/* Undo send banner */}
-      {undoMsgId && (
-        <div className="undo-banner flex items-center gap-3 px-4 py-2 border-t border-border bg-muted/30">
-          <span className="text-xs text-muted-foreground flex-1">
-            Message sent
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
-              const msgId = undoMsgId;
-              setUndoMsgId(null);
-              deleteMessageForEveryone(chatId, msgId).catch(() => {});
-              toast.success("Message unsent");
-            }}
-            className="flex items-center gap-1.5 text-xs font-semibold text-primary hover:opacity-80 transition-opacity"
-          >
-            <Undo2 size={12} />
-            Undo
-          </button>
-        </div>
-      )}
 
       {/* Reply/Edit bar */}
       {(replyToMessage || editingMessage) && (

@@ -603,14 +603,14 @@ export function ChatProvider({
     fetchChats().finally(() => setIsLoadingChats(false));
   }, [actor, isFetching, fetchChats]);
 
-  // ─── Poll chats list every 600ms ─────────────────────────────────────────
+  // ─── Poll chats list every 500ms ─────────────────────────────────────────
 
   useEffect(() => {
     if (!actor || isFetching) return;
 
     chatsPollRef.current = setInterval(() => {
       fetchChats();
-    }, 600);
+    }, 500);
 
     return () => {
       if (chatsPollRef.current) clearInterval(chatsPollRef.current);
@@ -629,11 +629,11 @@ export function ChatProvider({
     // Initial load of messages for active chat
     fetchMessages(activeChatId, 0n);
 
-    // Start polling for new messages — 200ms for active chat (near real-time)
+    // Start polling for new messages — 150ms for active chat (near real-time)
     messagesPollRef.current = setInterval(() => {
       const lastTs = lastMessageTimestampRef.current[activeChatId] ?? 0n;
       fetchMessages(activeChatId, lastTs);
-    }, 200);
+    }, 150);
 
     // Full refresh every 800ms to catch any missed updates (seen, edits, reactions)
     fullRefreshIntervalRef.current = setInterval(() => {
@@ -682,6 +682,9 @@ export function ChatProvider({
       activeChatIdRef.current = id;
       setActiveChatIdState(id);
       if (id) {
+        // Always clear group chat when opening a DM
+        activeGroupChatIdRef.current = null;
+        setActiveGroupChatIdState(null);
         lastMessageTimestampRef.current[id] = 0n;
         fetchMessages(id, 0n);
       }
@@ -1471,19 +1474,19 @@ export function ChatProvider({
     [actor, isFetching, currentUid],
   );
 
-  // Poll group chats every 600ms
+  // Poll group chats every 500ms
   useEffect(() => {
     if (!actor || isFetching) return;
     fetchGroupChats();
     groupPollRef.current = setInterval(() => {
       fetchGroupChats();
-    }, 600);
+    }, 500);
     return () => {
       if (groupPollRef.current) clearInterval(groupPollRef.current);
     };
   }, [actor, isFetching, fetchGroupChats]);
 
-  // Poll active group messages every 250ms
+  // Poll active group messages every 200ms
   useEffect(() => {
     if (!actor || isFetching || !activeGroupChatId) return;
 
@@ -1493,7 +1496,7 @@ export function ChatProvider({
       const lastTs =
         lastMessageTimestampRef.current[`group_${activeGroupChatId}`] ?? 0n;
       fetchGroupMessages(activeGroupChatId, lastTs);
-    }, 250);
+    }, 200);
 
     return () => {
       if (groupMsgPollRef.current) clearInterval(groupMsgPollRef.current);

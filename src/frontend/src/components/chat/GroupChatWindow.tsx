@@ -288,13 +288,19 @@ export function GroupChatWindow({ group, onBack }: GroupChatWindowProps) {
 
       setIsUploading(true);
       try {
-        const localUrl = URL.createObjectURL(file);
+        // Convert to base64 data URL so it persists across sessions and for other users
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
         await sendGroupMessage(
           group.id,
           currentUid,
           "",
           isImage ? "image" : isVideo ? "video" : "file",
-          { mediaUrl: localUrl, mediaName: file.name },
+          { mediaUrl: dataUrl, mediaName: file.name },
         );
         toast.success(`${isImage ? "Photo" : isVideo ? "Video" : "File"} sent`);
       } catch {
@@ -327,9 +333,15 @@ export function GroupChatWindow({ group, onBack }: GroupChatWindowProps) {
         if (blob.size === 0) return;
         setIsUploading(true);
         try {
-          const voiceUrl = URL.createObjectURL(blob);
+          // Convert to base64 so voice message persists and is visible to other users
+          const voiceDataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
           await sendGroupMessage(group.id, currentUid, "", "voice", {
-            mediaUrl: voiceUrl,
+            mediaUrl: voiceDataUrl,
             mediaDuration: recordingDuration,
           });
           toast.success("Voice message sent");
@@ -413,9 +425,9 @@ export function GroupChatWindow({ group, onBack }: GroupChatWindowProps) {
   const canManage = myRole === "admin" || myRole === "moderator";
 
   return (
-    <div className="flex h-full bg-background overflow-hidden">
+    <div className="flex flex-col h-full bg-background overflow-hidden">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-background/95 backdrop-blur-md sticky top-0 z-10 shadow-sm">
+      <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-background/95 backdrop-blur-md sticky top-0 z-10 shadow-sm flex-shrink-0">
         {onBack && (
           <Button
             variant="ghost"
