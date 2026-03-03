@@ -976,13 +976,8 @@ export function ChatProvider({
       // Use knownUser if provided (e.g. from search results), else look up in state
       const otherUser = knownUser ?? users[otherUid];
 
-      // Check if target user is private and current user is not a follower
-      if (otherUser?.isPrivate) {
-        const isFollower = otherUser.followers.includes(currentUid);
-        if (!isFollower) {
-          return { chatId, isRequest: true };
-        }
-      }
+      // NOTE: Follow system removed — any user can chat with any user directly.
+      // Private account gating is no longer enforced.
 
       if (!actor) {
         // Offline fallback — just set active
@@ -1059,32 +1054,6 @@ export function ChatProvider({
           setPendingChatUser(otherUser ?? null);
           setActiveChatId(chatId);
           return { chatId, isRequest: false };
-        }
-
-        // Check if private account → create request
-        if (otherUser?.isPrivate) {
-          const currentRequests = getRequests();
-          const existingRequest = currentRequests.find(
-            (r) =>
-              r.senderId === currentUid &&
-              r.receiverId === otherUid &&
-              r.status === "pending",
-          );
-          if (!existingRequest) {
-            const req: MessageRequest = {
-              id: generateId(),
-              senderId: currentUid,
-              receiverId: otherUid,
-              chatId,
-              status: "pending",
-              createdAt: Date.now(),
-              previewMessage: "Would like to message you",
-            };
-            const updated = [...currentRequests, req];
-            saveRequests(updated);
-            setRequests(updated);
-          }
-          return { chatId, isRequest: true };
         }
 
         return { chatId, isRequest: false };

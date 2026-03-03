@@ -22,7 +22,6 @@ import {
   Bookmark,
   Check,
   CheckCheck,
-  Clock,
   Edit,
   Folder,
   FolderPlus,
@@ -32,7 +31,6 @@ import {
   NotebookPen,
   Pin,
   Search,
-  UserPlus,
   Users2,
 } from "lucide-react";
 import React, { useState, useCallback, useRef, useEffect } from "react";
@@ -50,7 +48,6 @@ import {
   getMood,
   getNote,
 } from "../../services/featureService";
-import { hasPendingRequest } from "../../services/followService";
 import type { AppUser, Chat, GroupChat } from "../../types";
 import { CreateGroupModal } from "./CreateGroupModal";
 import { StoryBarICP } from "./StoryBarICP";
@@ -72,10 +69,6 @@ export function Sidebar({ onChatSelect, onGroupSelect }: SidebarProps) {
     searchUsers,
     openChat,
     requests,
-    followRequests,
-    sendFollowRequest,
-    acceptFollowRequest,
-    declineFollowRequest,
     groupChats,
     groupMessages,
     activeGroupChatId,
@@ -149,36 +142,14 @@ export function Sidebar({ onChatSelect, onGroupSelect }: SidebarProps) {
       setSearch("");
       setUserResults([]);
 
-      // Check if private account and not a follower
-      if (user.isPrivate && !user.followers.includes(currentUid)) {
-        const alreadyRequested = hasPendingRequest(currentUid, user.uid);
-        if (alreadyRequested) {
-          toast.info("Follow request already sent. Waiting for approval.");
-        } else {
-          sendFollowRequest(user.uid, user.username);
-          toast.success(
-            `Follow request sent to @${user.username}. They must accept before you can chat.`,
-          );
-        }
-        return;
-      }
-
       try {
-        const { chatId, isRequest } = await openChat(
-          currentUid,
-          user.uid,
-          user,
-        );
-        if (!isRequest) {
-          onChatSelect?.(chatId);
-        } else {
-          toast.info("Message request sent");
-        }
+        const { chatId } = await openChat(currentUid, user.uid, user);
+        onChatSelect?.(chatId);
       } catch {
         toast.error("Could not open chat. Please try again.");
       }
     },
-    [openChat, currentUid, onChatSelect, sendFollowRequest],
+    [openChat, currentUid, onChatSelect],
   );
 
   // Sort chats: pinned first, then by lastUpdated
@@ -195,13 +166,7 @@ export function Sidebar({ onChatSelect, onGroupSelect }: SidebarProps) {
     (r) => r.receiverId === currentUid && r.status === "pending",
   );
 
-  // Follow requests pending for current user
-  const pendingFollowRequests = followRequests.filter(
-    (r) => r.receiverId === currentUid && r.status === "pending",
-  );
-
-  const totalRequestBadge =
-    pendingRequests.length + pendingFollowRequests.length;
+  const totalRequestBadge = pendingRequests.length;
 
   const isSearchMode = !!search.trim();
 
@@ -446,12 +411,6 @@ export function Sidebar({ onChatSelect, onGroupSelect }: SidebarProps) {
                 </p>
               )}
               {userResults.map((user) => {
-                const isPrivateAndNotFollower =
-                  user.isPrivate && !user.followers.includes(currentUid);
-                const alreadyRequested =
-                  isPrivateAndNotFollower &&
-                  hasPendingRequest(currentUid, user.uid);
-
                 return (
                   <button
                     type="button"
@@ -470,23 +429,6 @@ export function Sidebar({ onChatSelect, onGroupSelect }: SidebarProps) {
                         <p className="text-sm font-semibold truncate">
                           @{user.username}
                         </p>
-                        {user.isPrivate && (
-                          <Badge
-                            variant="secondary"
-                            className="text-[9px] px-1.5 py-0 h-4"
-                          >
-                            Private
-                          </Badge>
-                        )}
-                        {alreadyRequested && (
-                          <Badge
-                            variant="outline"
-                            className="text-[9px] px-1.5 py-0 h-4 text-primary border-primary/30"
-                          >
-                            <Clock size={8} className="mr-0.5" />
-                            Pending
-                          </Badge>
-                        )}
                       </div>
                       {extractPlainBio(user.bio || "") && (
                         <p className="text-xs text-muted-foreground truncate mt-0.5">
@@ -500,12 +442,6 @@ export function Sidebar({ onChatSelect, onGroupSelect }: SidebarProps) {
                         </p>
                       )}
                     </div>
-                    {isPrivateAndNotFollower && !alreadyRequested && (
-                      <UserPlus
-                        size={14}
-                        className="text-primary flex-shrink-0"
-                      />
-                    )}
                   </button>
                 );
               })}
@@ -704,8 +640,7 @@ export function Sidebar({ onChatSelect, onGroupSelect }: SidebarProps) {
 
           <TabsContent value="requests" className="flex-1 min-h-0 mt-0">
             <ScrollArea className="h-full">
-              {pendingRequests.length === 0 &&
-              pendingFollowRequests.length === 0 ? (
+              {pendingRequests.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 px-8 gap-3">
                   <p className="text-sm text-muted-foreground text-center">
                     No pending requests
@@ -713,67 +648,6 @@ export function Sidebar({ onChatSelect, onGroupSelect }: SidebarProps) {
                 </div>
               ) : (
                 <div className="p-2 space-y-1">
-                  {/* Follow requests */}
-                  {pendingFollowRequests.length > 0 && (
-                    <>
-                      <p className="text-[10px] text-muted-foreground px-3 pt-1 pb-1.5 font-semibold uppercase tracking-widest flex items-center gap-1.5">
-                        <UserPlus size={9} className="text-primary" /> Follow
-                        Requests
-                      </p>
-                      {pendingFollowRequests.map((req) => {
-                        const sender = users[req.senderId];
-                        return (
-                          <div
-                            key={req.id}
-                            className="flex items-center gap-3 p-3 rounded-xl hover:bg-sidebar-accent transition-colors"
-                          >
-                            <UserAvatar
-                              src={sender?.profilePicture}
-                              username={
-                                sender?.username ?? req.senderUsername ?? "?"
-                              }
-                              size="sm"
-                              showOnline={false}
-                            />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold truncate">
-                                @
-                                {sender?.username ??
-                                  req.senderUsername ??
-                                  req.senderId.slice(-6)}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                Wants to follow you
-                              </p>
-                            </div>
-                            <div className="flex gap-1">
-                              <Button
-                                size="sm"
-                                className="h-7 px-2 rounded-lg text-xs gradient-btn"
-                                onClick={() => {
-                                  acceptFollowRequest(req.id);
-                                  toast.success("Follow request accepted");
-                                }}
-                              >
-                                <span className="text-white">Accept</span>
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 px-2 rounded-lg text-xs"
-                                onClick={() => {
-                                  declineFollowRequest(req.id);
-                                }}
-                              >
-                                Decline
-                              </Button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </>
-                  )}
-
                   {/* Message requests */}
                   {pendingRequests.length > 0 && (
                     <>

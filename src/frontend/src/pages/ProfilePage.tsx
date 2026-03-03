@@ -54,10 +54,6 @@ import {
   setMood,
   setNote,
 } from "../services/featureService";
-import {
-  getPendingRequestsForUser,
-  hasPendingRequest,
-} from "../services/followService";
 
 export function ProfilePage() {
   const { username } = useParams({ strict: false }) as { username?: string };
@@ -74,17 +70,7 @@ export function ProfilePage() {
     };
   }, []);
 
-  const {
-    users,
-    openChat,
-    setActiveChatId,
-    sendFollowRequest,
-    acceptFollowRequest,
-    declineFollowRequest,
-    followUser,
-    unfollowUser,
-    cancelFollowRequestFn,
-  } = useChat();
+  const { users, openChat, setActiveChatId } = useChat();
 
   const isOwnProfile =
     !username ||
@@ -163,7 +149,6 @@ export function ProfilePage() {
     websiteUrl: currentUser?.websiteUrl ?? "",
   });
   const [saving, setSaving] = useState(false);
-  const [followLoading, setFollowLoading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Mood & badges (own profile only)
@@ -274,66 +259,13 @@ export function ProfilePage() {
   const handleMessageUser = async () => {
     if (!currentUser) return;
     try {
-      const { chatId, isRequest } = await openChat(
-        currentUser.uid,
-        targetUser.uid,
-      );
-      if (!isRequest) {
-        setActiveChatId(chatId);
-        navigate({ to: "/" });
-      } else {
-        toast.info("Send a follow request first to start chatting");
-      }
+      const { chatId } = await openChat(currentUser.uid, targetUser.uid);
+      setActiveChatId(chatId);
+      navigate({ to: "/" });
     } catch {
       toast.error("Failed to open chat");
     }
   };
-
-  const handleFollow = async () => {
-    if (!currentUser || isOwnProfile) return;
-    setFollowLoading(true);
-    try {
-      if (targetUser.isPrivate) {
-        sendFollowRequest(targetUser.uid, targetUser.username);
-        toast.success("Follow request sent");
-      } else {
-        await followUser(targetUser.uid);
-        toast.success(`Following @${targetUser.username}`);
-      }
-    } catch {
-      toast.error("Failed to follow");
-    } finally {
-      setFollowLoading(false);
-    }
-  };
-
-  const handleUnfollow = async () => {
-    if (!currentUser || isOwnProfile) return;
-    setFollowLoading(true);
-    try {
-      await unfollowUser(targetUser.uid);
-      toast.success(`Unfollowed @${targetUser.username}`);
-    } catch {
-      toast.error("Failed to unfollow");
-    } finally {
-      setFollowLoading(false);
-    }
-  };
-
-  const handleCancelRequest = () => {
-    cancelFollowRequestFn(targetUser.uid);
-    toast.success("Follow request cancelled");
-  };
-
-  const isFollowing =
-    currentUser && targetUser.followers.includes(currentUser.uid);
-  const isPending =
-    currentUser && hasPendingRequest(currentUser.uid, targetUser.uid);
-
-  const incomingRequests =
-    isOwnProfile && currentUser
-      ? getPendingRequestsForUser(currentUser.uid)
-      : [];
 
   const memberSince = targetUser.createdAt
     ? new Date(targetUser.createdAt).toLocaleDateString([], {
@@ -489,71 +421,15 @@ export function ProfilePage() {
           {/* Action buttons (non-editing, non-own profile) */}
           {!isOwnProfile && !editing && (
             <div className="flex gap-2 flex-wrap mb-1">
-              {isFollowing ? (
-                <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleUnfollow}
-                    disabled={followLoading}
-                    className="rounded-xl gap-1.5 h-9 px-4 text-sm"
-                  >
-                    {followLoading ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <UserCheck size={13} />
-                    )}
-                    Following
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={handleMessageUser}
-                    className="rounded-xl gap-1.5 h-9 px-4 text-sm gradient-btn"
-                  >
-                    <MessageCircle size={13} className="text-white" />
-                    <span className="text-white">Message</span>
-                  </Button>
-                </>
-              ) : isPending ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCancelRequest}
-                  className="rounded-xl gap-1.5 h-9 px-4 text-sm"
-                >
-                  <Clock size={13} />
-                  Requested · Cancel
-                </Button>
-              ) : (
-                <>
-                  <Button
-                    size="sm"
-                    onClick={handleFollow}
-                    disabled={followLoading}
-                    className="rounded-xl gap-1.5 h-9 px-4 text-sm gradient-btn"
-                  >
-                    {followLoading ? (
-                      <Loader2 size={13} className="animate-spin text-white" />
-                    ) : (
-                      <UserPlus size={13} className="text-white" />
-                    )}
-                    <span className="text-white">
-                      {targetUser.isPrivate ? "Request" : "Follow"}
-                    </span>
-                  </Button>
-                  {!targetUser.isPrivate && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleMessageUser}
-                      className="rounded-xl gap-1.5 h-9 px-4 text-sm"
-                    >
-                      <MessageCircle size={13} />
-                      Message
-                    </Button>
-                  )}
-                </>
-              )}
+              <Button
+                size="sm"
+                onClick={handleMessageUser}
+                className="rounded-xl gap-1.5 h-9 px-4 text-sm gradient-btn"
+                data-ocid="profile.message.button"
+              >
+                <MessageCircle size={13} className="text-white" />
+                <span className="text-white">Message</span>
+              </Button>
             </div>
           )}
         </div>
@@ -773,7 +649,7 @@ export function ProfilePage() {
             )}
 
             {/* Close Friends badge / button */}
-            {!isOwnProfile && isFollowing && (
+            {!isOwnProfile && (
               <div className="mt-3 flex items-center gap-2">
                 <button
                   type="button"
@@ -999,75 +875,6 @@ export function ProfilePage() {
                 );
               })}
             </div>
-          </div>
-        )}
-
-        {/* Incoming follow requests — own profile only */}
-        {isOwnProfile && incomingRequests.length > 0 && (
-          <div className="mt-6 rounded-2xl border border-border overflow-hidden">
-            <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center justify-between">
-              <p className="text-sm font-semibold flex items-center gap-2">
-                <UserPlus size={14} className="text-primary" />
-                Follow Requests
-              </p>
-              <Badge className="text-xs rounded-full gradient-btn text-white border-0">
-                {incomingRequests.length}
-              </Badge>
-            </div>
-            <ScrollArea className="max-h-64">
-              {incomingRequests.map((req) => {
-                const sender = users[req.senderId];
-                return (
-                  <div
-                    key={req.id}
-                    className="flex items-center gap-3 px-4 py-3 border-b border-border/50 last:border-0"
-                  >
-                    <UserAvatar
-                      src={sender?.profilePicture}
-                      username={sender?.username ?? req.senderUsername ?? "?"}
-                      size="sm"
-                      showOnline={false}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold">
-                        @
-                        {sender?.username ??
-                          req.senderUsername ??
-                          req.senderId.slice(-8)}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Wants to follow you
-                      </p>
-                    </div>
-                    <div className="flex gap-1.5">
-                      <Button
-                        size="sm"
-                        className="rounded-xl h-7 px-3 text-xs gradient-btn"
-                        onClick={() => {
-                          acceptFollowRequest(req.id);
-                          toast.success("Follow request accepted");
-                        }}
-                      >
-                        <UserCheck size={11} className="text-white" />
-                        <span className="text-white ml-1">Accept</span>
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="rounded-xl h-7 px-3 text-xs"
-                        onClick={() => {
-                          declineFollowRequest(req.id);
-                          toast.success("Request declined");
-                        }}
-                      >
-                        <UserMinus size={11} />
-                        <span className="ml-1">Decline</span>
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-            </ScrollArea>
           </div>
         )}
 

@@ -1,7 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, Check, MessageSquare, UserPlus, X } from "lucide-react";
+import { ArrowLeft, Check, MessageSquare, X } from "lucide-react";
+import type React from "react";
 import { useEffect } from "react";
 import { toast } from "sonner";
 import { UserAvatar } from "../components/chat/UserAvatar";
@@ -16,9 +17,6 @@ export function MessageRequestsPage() {
     acceptRequest,
     declineRequest,
     setActiveChatId,
-    followRequests,
-    acceptFollowRequest,
-    declineFollowRequest,
     chats,
   } = useChat();
   const { currentUser } = useAuth();
@@ -37,19 +35,13 @@ export function MessageRequestsPage() {
     (r) => r.receiverId === currentUser?.uid && r.status === "pending",
   );
 
-  // "Primary": accepted DM requests (active chats with non-followers)
   const acceptedRequests = requests.filter(
     (r) =>
       (r.receiverId === currentUser?.uid || r.senderId === currentUser?.uid) &&
       r.status === "accepted",
   );
 
-  // "Requests" tab: pending follow requests
-  const pendingFollowReqs = followRequests.filter(
-    (r) => r.receiverId === currentUser?.uid && r.status === "pending",
-  );
-
-  const totalBadge = pendingRequests.length + pendingFollowReqs.length;
+  const totalBadge = pendingRequests.length;
 
   const handleAccept = (requestId: string, chatId: string) => {
     acceptRequest(requestId);
@@ -72,6 +64,7 @@ export function MessageRequestsPage() {
           size="icon"
           className="rounded-xl w-9 h-9"
           onClick={() => navigate({ to: "/" })}
+          data-ocid="message_requests.back.button"
         >
           <ArrowLeft size={18} />
         </Button>
@@ -90,8 +83,12 @@ export function MessageRequestsPage() {
 
       <div className="max-w-lg mx-auto">
         <Tabs defaultValue="general" className="w-full">
-          <TabsList className="w-full mx-0 mt-0 grid grid-cols-3 h-10 bg-muted/60 rounded-none border-b border-border">
-            <TabsTrigger value="primary" className="text-xs rounded-none gap-1">
+          <TabsList className="w-full mx-0 mt-0 grid grid-cols-2 h-10 bg-muted/60 rounded-none border-b border-border">
+            <TabsTrigger
+              value="primary"
+              className="text-xs rounded-none gap-1"
+              data-ocid="message_requests.primary.tab"
+            >
               Primary
               {acceptedRequests.length > 0 && (
                 <span className="bg-muted text-muted-foreground rounded-full text-[9px] font-bold px-1.5 py-0.5">
@@ -99,22 +96,15 @@ export function MessageRequestsPage() {
                 </span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="general" className="text-xs rounded-none gap-1">
+            <TabsTrigger
+              value="general"
+              className="text-xs rounded-none gap-1"
+              data-ocid="message_requests.general.tab"
+            >
               General
               {pendingRequests.length > 0 && (
                 <span className="bg-primary text-primary-foreground rounded-full text-[9px] font-bold px-1.5 py-0.5">
                   {pendingRequests.length}
-                </span>
-              )}
-            </TabsTrigger>
-            <TabsTrigger
-              value="requests"
-              className="text-xs rounded-none gap-1"
-            >
-              Follow Reqs
-              {pendingFollowReqs.length > 0 && (
-                <span className="bg-primary text-primary-foreground rounded-full text-[9px] font-bold px-1.5 py-0.5">
-                  {pendingFollowReqs.length}
                 </span>
               )}
             </TabsTrigger>
@@ -174,7 +164,7 @@ export function MessageRequestsPage() {
               <EmptyState
                 icon={<MessageSquare size={26} strokeWidth={1.5} />}
                 title="No pending requests"
-                description="Message requests from non-followers appear here"
+                description="Message requests from other users appear here"
               />
             ) : (
               <div className="space-y-1 px-2">
@@ -212,6 +202,7 @@ export function MessageRequestsPage() {
                           variant="outline"
                           className="rounded-xl gap-1"
                           onClick={() => handleDecline(req.id)}
+                          data-ocid="message_requests.decline.button"
                         >
                           <X size={12} />
                         </Button>
@@ -219,76 +210,10 @@ export function MessageRequestsPage() {
                           size="sm"
                           className="rounded-xl gap-1"
                           onClick={() => handleAccept(req.id, req.chatId)}
+                          data-ocid="message_requests.accept.button"
                         >
                           <Check size={12} />
                           Accept
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </TabsContent>
-
-          {/* Requests Tab (follow requests) */}
-          <TabsContent value="requests" className="py-4">
-            {pendingFollowReqs.length === 0 ? (
-              <EmptyState
-                icon={<UserPlus size={26} strokeWidth={1.5} />}
-                title="No follow requests"
-                description="People who want to follow you appear here"
-              />
-            ) : (
-              <div className="space-y-1 px-2">
-                {pendingFollowReqs.map((req) => {
-                  const sender = users[req.senderId];
-                  return (
-                    <div
-                      key={req.id}
-                      className="flex items-center gap-3 p-4 bg-card border border-border rounded-2xl"
-                    >
-                      <UserAvatar
-                        src={sender?.profilePicture}
-                        username={sender?.username ?? req.senderUsername ?? "?"}
-                        size="md"
-                        showOnline={false}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-sm">
-                          {sender?.username ?? req.senderUsername}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Wants to follow you
-                        </p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">
-                          {new Date(req.createdAt).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <div className="flex gap-2 flex-shrink-0">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="rounded-xl gap-1"
-                          onClick={() => {
-                            declineFollowRequest(req.id);
-                            toast.success("Follow request declined");
-                          }}
-                        >
-                          <X size={12} />
-                        </Button>
-                        <Button
-                          size="sm"
-                          className="rounded-xl gradient-btn gap-1"
-                          onClick={() => {
-                            acceptFollowRequest(req.id);
-                            toast.success("Follow request accepted");
-                          }}
-                        >
-                          <span className="text-white text-xs flex items-center gap-1">
-                            <Check size={12} />
-                            Accept
-                          </span>
                         </Button>
                       </div>
                     </div>
@@ -330,6 +255,3 @@ function EmptyState({
     </div>
   );
 }
-
-// needed for React.ReactNode
-import type React from "react";

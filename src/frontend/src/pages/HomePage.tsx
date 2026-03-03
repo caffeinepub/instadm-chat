@@ -91,10 +91,10 @@ export function HomePage() {
     return () => clearTimeout(timer);
   }, [isSupported, markAsked, requestPermission]);
 
-  const handleChatSelect = (chatId: string) => {
-    // Always clear group chat first so ChatWindow renders instead of GroupChatWindow
+  const handleChatSelect = (_chatId: string) => {
+    // openChat (for search results) or handleSelectChat (for existing chats) already
+    // calls setActiveChatId internally. This callback only handles mobile UI state.
     setActiveGroupChatId(null);
-    setActiveChatId(chatId);
     setMobileChatOpen(true);
   };
 

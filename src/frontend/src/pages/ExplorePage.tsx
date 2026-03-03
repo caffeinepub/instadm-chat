@@ -40,7 +40,7 @@ import type { AppUser } from "../types";
 
 export function ExplorePage() {
   const { currentUser } = useAuth();
-  const { users, followUser, unfollowUser, sendFollowRequest } = useChat();
+  const { openChat, setActiveChatId } = useChat();
   const { actor } = useActor();
   const navigate = useNavigate();
   const [allUsers, setAllUsers] = useState<AppUser[]>([]);
@@ -52,9 +52,7 @@ export function ExplorePage() {
   >([]);
   const [selectedHashtag, setSelectedHashtag] = useState<string | null>(null);
   const [filteredPosts, setFilteredPosts] = useState<Post[]>([]);
-  const [followLoading, setFollowLoading] = useState<Record<string, boolean>>(
-    {},
-  );
+  const [messagingUser, setMessagingUser] = useState<string | null>(null);
 
   // Channels state
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -116,15 +114,11 @@ export function ExplorePage() {
         setFilteredUsers(appUsers);
       })
       .catch(() => {
-        // fallback to cached users
-        const cached = Object.values(users).filter(
-          (u) => u.uid !== currentUser?.uid,
-        );
-        setAllUsers(cached);
-        setFilteredUsers(cached);
+        setAllUsers([]);
+        setFilteredUsers([]);
       })
       .finally(() => setIsLoading(false));
-  }, [actor, currentUser, users]);
+  }, [actor, currentUser]);
 
   // Compute trending hashtags
   useEffect(() => {
@@ -227,68 +221,17 @@ export function ExplorePage() {
     setFilteredPosts(posts.filter((p) => p.hashtags.includes(tag)));
   };
 
-  const handleFollow = async (user: AppUser) => {
+  const handleMessageUser = async (user: AppUser) => {
     if (!currentUser) return;
-    setFollowLoading((prev) => ({ ...prev, [user.uid]: true }));
+    setMessagingUser(user.uid);
     try {
-      if (user.isPrivate) {
-        sendFollowRequest(user.uid, user.username);
-        toast.success(`Follow request sent to @${user.username}`);
-      } else {
-        await followUser(user.uid);
-        toast.success(`Following @${user.username}`);
-        setAllUsers((prev) =>
-          prev.map((u) =>
-            u.uid === user.uid
-              ? { ...u, followers: [...u.followers, currentUser.uid] }
-              : u,
-          ),
-        );
-        setFilteredUsers((prev) =>
-          prev.map((u) =>
-            u.uid === user.uid
-              ? { ...u, followers: [...u.followers, currentUser.uid] }
-              : u,
-          ),
-        );
-      }
+      const { chatId } = await openChat(currentUser.uid, user.uid, user);
+      setActiveChatId(chatId);
+      navigate({ to: "/" });
     } catch {
-      toast.error("Failed to follow");
+      toast.error("Failed to open chat");
     } finally {
-      setFollowLoading((prev) => ({ ...prev, [user.uid]: false }));
-    }
-  };
-
-  const handleUnfollow = async (user: AppUser) => {
-    if (!currentUser) return;
-    setFollowLoading((prev) => ({ ...prev, [user.uid]: true }));
-    try {
-      await unfollowUser(user.uid);
-      toast.success(`Unfollowed @${user.username}`);
-      setAllUsers((prev) =>
-        prev.map((u) =>
-          u.uid === user.uid
-            ? {
-                ...u,
-                followers: u.followers.filter((f) => f !== currentUser.uid),
-              }
-            : u,
-        ),
-      );
-      setFilteredUsers((prev) =>
-        prev.map((u) =>
-          u.uid === user.uid
-            ? {
-                ...u,
-                followers: u.followers.filter((f) => f !== currentUser.uid),
-              }
-            : u,
-        ),
-      );
-    } catch {
-      toast.error("Failed to unfollow");
-    } finally {
-      setFollowLoading((prev) => ({ ...prev, [user.uid]: false }));
+      setMessagingUser(null);
     }
   };
 
@@ -304,24 +247,8 @@ export function ExplorePage() {
     .slice(0, 10);
 
   // Recommended friends: users with mutual followers
-  const recommended = allUsers
-    .filter((u) => {
-      if (!currentUser) return false;
-      const isFollowing = u.followers.includes(currentUser.uid);
-      if (isFollowing) return false;
-      // Mutual followers: people who follow both me and them
-      const mutuals = u.followers.filter((uid) =>
-        currentUser.following?.includes(uid),
-      );
-      return mutuals.length > 0;
-    })
-    .slice(0, 10);
-
-  const suggestedFallback = allUsers
-    .filter((u) => !currentUser?.following?.includes(u.uid))
-    .slice(0, 10);
-
-  const forYouUsers = recommended.length > 0 ? recommended : suggestedFallback;
+  // Suggested users: all other registered users (no follow system)
+  const forYouUsers = allUsers.slice(0, 10);
 
   const getRankIcon = (rank: number) => {
     if (rank === 0) return <Crown size={14} className="text-yellow-400" />;
@@ -335,8 +262,7 @@ export function ExplorePage() {
   };
 
   const UserCard = ({ user }: { user: AppUser }) => {
-    const isFollowing = currentUser && user.followers.includes(currentUser.uid);
-    const loading = followLoading[user.uid];
+    const loading = messagingUser === user.uid;
     return (
       <div className="flex items-center gap-3 p-3 rounded-xl hover:bg-accent/50 transition-colors">
         <Avatar className="w-10 h-10 flex-shrink-0">
@@ -348,11 +274,6 @@ export function ExplorePage() {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             <p className="text-sm font-semibold truncate">@{user.username}</p>
-            {user.isPrivate && (
-              <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4">
-                Private
-              </Badge>
-            )}
             {user.onlineStatus && (
               <span className="w-2 h-2 rounded-full bg-online-dot flex-shrink-0" />
             )}
@@ -362,30 +283,17 @@ export function ExplorePage() {
               {user.bio}
             </p>
           )}
-          <p className="text-[10px] text-muted-foreground mt-0.5">
-            {user.followers.length} followers
-          </p>
         </div>
         <Button
           size="sm"
-          variant={isFollowing ? "outline" : "default"}
-          className={`h-8 px-3 rounded-xl text-xs flex-shrink-0 ${!isFollowing ? "gradient-btn" : ""}`}
-          onClick={() =>
-            isFollowing ? handleUnfollow(user) : handleFollow(user)
-          }
+          className="h-8 px-3 rounded-xl text-xs flex-shrink-0 gradient-btn"
+          onClick={() => handleMessageUser(user)}
           disabled={loading}
         >
           {loading ? (
             <Loader2 size={12} className="animate-spin" />
-          ) : isFollowing ? (
-            <>
-              <UserCheck size={12} className="mr-1" />
-              Following
-            </>
           ) : (
-            <span className={!isFollowing ? "text-white" : ""}>
-              {user.isPrivate ? "Request" : "Follow"}
-            </span>
+            <span className="text-white">Message</span>
           )}
         </Button>
       </div>
