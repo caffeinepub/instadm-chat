@@ -1,5 +1,13 @@
 import { cn } from "@/lib/utils";
-import { Check, CheckCheck, FileText, Pause, Play } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  CheckCheck,
+  FileText,
+  Loader2,
+  Pause,
+  Play,
+} from "lucide-react";
 import type React from "react";
 import { useCallback, useRef, useState } from "react";
 import type { AppUser, Message } from "../../types";
@@ -24,6 +32,7 @@ interface MessageBubbleProps {
   onSave?: () => void;
   onPin?: () => void;
   onReport?: () => void;
+  onRetry?: () => void;
   isBookmarked?: boolean;
   isSaved?: boolean;
   isPinned?: boolean;
@@ -48,6 +57,7 @@ export function MessageBubble({
   onSave,
   onPin,
   onReport,
+  onRetry,
   isBookmarked = false,
   isSaved = false,
   isPinned = false,
@@ -139,18 +149,34 @@ export function MessageBubble({
           {replyToMessage && !replyToMessage.deletedForEveryone && (
             <div
               className={cn(
-                "mb-1 px-3 py-1.5 rounded-xl text-xs border-l-2 opacity-70 max-w-full truncate",
-                isSender
-                  ? "bg-white/20 border-white/60 text-white"
-                  : "bg-black/10 border-border text-foreground dark:bg-white/10",
+                "mb-1.5 rounded-xl overflow-hidden border border-white/10",
+                isSender ? "ml-auto" : "mr-auto",
               )}
+              style={{
+                background: isSender
+                  ? "rgba(255,255,255,0.12)"
+                  : "rgba(0,0,0,0.15)",
+                borderLeft: "3px solid #e1306c",
+                maxWidth: "100%",
+              }}
             >
-              <span className="font-semibold block text-[10px] mb-0.5 uppercase tracking-wide opacity-80">
-                Reply
-              </span>
-              <span className="truncate block">
-                {replyToMessage.text || `📎 ${replyToMessage.messageType}`}
-              </span>
+              <div className="px-3 py-2">
+                <p
+                  className="text-[11px] font-semibold mb-0.5 truncate"
+                  style={{ color: "#e1306c" }}
+                >
+                  {replyToMessage.senderId === currentUid
+                    ? "You"
+                    : (participants.find(
+                        (p) => p.uid === replyToMessage.senderId,
+                      )?.username ?? "User")}
+                </p>
+                <p className="text-[11px] opacity-75 truncate leading-snug">
+                  {replyToMessage.messageType !== "text"
+                    ? `📎 ${replyToMessage.messageType}`
+                    : replyToMessage.text?.slice(0, 60) || "..."}
+                </p>
+              </div>
             </div>
           )}
 
@@ -179,9 +205,11 @@ export function MessageBubble({
               "relative cursor-pointer select-none text-left",
               isSender ? "bubble-sender" : "bubble-receiver",
               isDeleted && "opacity-60",
+              message.status === "failed" &&
+                "opacity-75 ring-1 ring-destructive/30",
             )}
             style={
-              isSender && senderGradient
+              isSender && senderGradient && message.status !== "failed"
                 ? { background: senderGradient }
                 : undefined
             }
@@ -251,7 +279,14 @@ export function MessageBubble({
             )}
             {isSender && (
               <span className="flex items-center">
-                {isSeen ? (
+                {message.status === "pending" ? (
+                  <Loader2
+                    size={11}
+                    className="text-muted-foreground animate-spin"
+                  />
+                ) : message.status === "failed" ? (
+                  <AlertCircle size={11} className="text-destructive" />
+                ) : isSeen ? (
                   <CheckCheck
                     size={13}
                     className="text-primary"
@@ -270,8 +305,24 @@ export function MessageBubble({
             )}
           </div>
 
+          {/* Failed message: tap to retry */}
+          {isSender && message.status === "failed" && (
+            <div className="flex justify-end mt-0.5">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRetry?.();
+                }}
+                className="text-[9px] font-medium text-destructive hover:underline cursor-pointer"
+              >
+                Tap to retry
+              </button>
+            </div>
+          )}
+
           {/* Instagram-style "Seen" label for the last sent message */}
-          {isSender && isLastMessage && isSeen && (
+          {isSender && isLastMessage && isSeen && !message.status && (
             <div className="flex justify-end mt-0.5 seen-indicator">
               <span
                 className="text-[9px] font-medium"

@@ -93,7 +93,33 @@ export function StoryBarICP({ className }: StoryBarICPProps) {
           ),
         });
       }
-      setFeedGroups(groups);
+
+      // Get chat participant IDs from localStorage — only show stories from chatted users
+      const chatPartners = new Set<string>();
+      try {
+        const storedChats = localStorage.getItem("linkr_chats");
+        if (storedChats) {
+          const parsed = JSON.parse(storedChats) as Array<{
+            participants: string[];
+          }>;
+          for (const chat of parsed) {
+            for (const p of chat.participants) {
+              chatPartners.add(p);
+            }
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+
+      // Only show stories from users you've chatted with (or yourself)
+      const filteredGroups =
+        chatPartners.size > 0
+          ? groups.filter(
+              (g) => chatPartners.has(g.authorId) || g.authorId === uid,
+            )
+          : groups;
+      setFeedGroups(filteredGroups);
     } catch {
       // silently fail
     }
@@ -337,6 +363,8 @@ export function StoryBarICP({ className }: StoryBarICPProps) {
 
 // ─── Create Story Modal ───────────────────────────────────────────────────────
 
+const QUICK_EMOJIS = ["❤️", "🔥", "✨", "😍", "🥳", "😎", "💯", "🎉"];
+
 function CreateStoryModal({
   text,
   onTextChange,
@@ -364,23 +392,20 @@ function CreateStoryModal({
   onSubmit: () => void;
   onClose: () => void;
 }) {
+  const [storyTab, setStoryTab] = useState<"text" | "photo">("text");
   const [fontStyle, setFontStyle] = useState<"normal" | "bold" | "italic">(
     "normal",
   );
+  const [textAlign, setTextAlign] = useState<"left" | "center" | "right">(
+    "center",
+  );
   const [textColor, setTextColor] = useState("#ffffff");
-  const [emojiInput, setEmojiInput] = useState("");
-
-  const handleAddEmoji = () => {
-    if (emojiInput.trim()) {
-      onTextChange(text + emojiInput.trim());
-      setEmojiInput("");
-    }
-  };
 
   const previewTextStyle: React.CSSProperties = {
     color: textColor,
     fontWeight: fontStyle === "bold" ? 700 : 400,
     fontStyle: fontStyle === "italic" ? "italic" : "normal",
+    textAlign,
   };
 
   return (
@@ -404,7 +429,37 @@ function CreateStoryModal({
           </button>
         </div>
 
-        <div className="px-5 pb-5 space-y-4 overflow-y-auto max-h-[80vh]">
+        {/* Tab switcher */}
+        <div className="flex gap-0 px-5 pb-3">
+          <button
+            type="button"
+            onClick={() => setStoryTab("text")}
+            className={cn(
+              "flex-1 py-2 text-xs font-semibold rounded-l-xl border transition-colors",
+              storyTab === "text"
+                ? "bg-primary text-white border-primary"
+                : "bg-muted text-muted-foreground border-border hover:bg-accent",
+            )}
+            data-ocid="story.tab.text"
+          >
+            ✏️ Text
+          </button>
+          <button
+            type="button"
+            onClick={() => setStoryTab("photo")}
+            className={cn(
+              "flex-1 py-2 text-xs font-semibold rounded-r-xl border-t border-r border-b transition-colors",
+              storyTab === "photo"
+                ? "bg-primary text-white border-primary"
+                : "bg-muted text-muted-foreground border-border hover:bg-accent",
+            )}
+            data-ocid="story.tab.photo"
+          >
+            📷 Photo
+          </button>
+        </div>
+
+        <div className="px-5 pb-5 space-y-4 overflow-y-auto max-h-[72vh]">
           {/* Live preview */}
           <div
             className="w-full h-36 rounded-2xl flex items-center justify-center overflow-hidden relative"
@@ -419,7 +474,7 @@ function CreateStoryModal({
             ) : null}
             {text && (
               <p
-                className="font-bold text-lg text-center px-4 drop-shadow-lg absolute inset-x-0 bottom-4"
+                className="text-lg px-4 drop-shadow-lg absolute inset-x-0 bottom-4"
                 style={previewTextStyle}
               >
                 {text}
@@ -430,177 +485,228 @@ function CreateStoryModal({
             )}
           </div>
 
-          {/* Text input */}
-          <textarea
-            className="w-full rounded-xl border border-border bg-muted/50 px-4 py-3 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-primary/40 transition-shadow"
-            placeholder="Add text to your story..."
-            rows={2}
-            value={text}
-            onChange={(e) => onTextChange(e.target.value)}
-            maxLength={200}
-            data-ocid="story.create.textarea"
-          />
-
-          {/* Font style picker */}
-          <div>
-            <p className="text-xs text-muted-foreground mb-1.5 font-medium">
-              Font Style
-            </p>
-            <div className="flex gap-1.5">
-              {(["normal", "bold", "italic"] as const).map((style) => (
-                <button
-                  key={style}
-                  type="button"
-                  onClick={() => setFontStyle(style)}
-                  className={cn(
-                    "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border",
-                    fontStyle === style
-                      ? "bg-primary text-white border-primary"
-                      : "bg-muted border-border text-muted-foreground hover:bg-accent",
-                  )}
-                  style={{
-                    fontWeight: style === "bold" ? 700 : 400,
-                    fontStyle: style === "italic" ? "italic" : "normal",
-                  }}
-                >
-                  {style.charAt(0).toUpperCase() + style.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Text color picker */}
-          <div>
-            <p className="text-xs text-muted-foreground mb-1.5 font-medium">
-              Text Color
-            </p>
-            <div className="flex gap-2 flex-wrap">
-              {TEXT_COLORS.map((c) => (
-                <button
-                  key={c.value}
-                  type="button"
-                  title={c.label}
-                  onClick={() => setTextColor(c.value)}
-                  className={cn(
-                    "w-7 h-7 rounded-full transition-all border-2",
-                    textColor === c.value
-                      ? "ring-2 ring-primary ring-offset-2 ring-offset-card scale-110"
-                      : "border-transparent hover:scale-105",
-                  )}
-                  style={{
-                    background: c.value,
-                    borderColor: c.value === "#ffffff" ? "#ccc" : c.value,
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* Background */}
-          <div>
-            <p className="text-xs text-muted-foreground mb-1.5 font-medium">
-              Background
-            </p>
-            <div className="flex gap-2 flex-wrap">
-              {STATUS_BG_COLORS.map((bg) => (
-                <button
-                  key={bg.value}
-                  type="button"
-                  title={bg.label}
-                  onClick={() => onBgChange(bg.value)}
-                  className={cn(
-                    "w-8 h-8 rounded-full flex-shrink-0 transition-all",
-                    selectedBg === bg.value
-                      ? "ring-2 ring-white ring-offset-2 ring-offset-card scale-110"
-                      : "hover:scale-105",
-                  )}
-                  style={{ background: bg.value }}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* Emoji overlay */}
-          <div>
-            <p className="text-xs text-muted-foreground mb-1.5 font-medium">
-              Add Emoji / Sticker
-            </p>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={emojiInput}
-                onChange={(e) => setEmojiInput(e.target.value)}
-                placeholder="😍 🔥 ✨"
-                className="flex-1 rounded-xl border border-border bg-muted/50 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/40"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleAddEmoji();
-                  }
-                }}
-                data-ocid="story.create.input"
+          {storyTab === "text" ? (
+            <>
+              {/* Text input */}
+              <textarea
+                className="w-full rounded-xl border border-border bg-muted/50 px-4 py-3 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-primary/40 transition-shadow"
+                placeholder="Add text to your story..."
+                rows={2}
+                value={text}
+                onChange={(e) => onTextChange(e.target.value)}
+                maxLength={200}
+                data-ocid="story.create.textarea"
               />
-              <button
-                type="button"
-                onClick={handleAddEmoji}
-                className="px-3 py-2 rounded-xl bg-muted hover:bg-accent text-sm font-medium transition-colors"
-              >
-                Add
-              </button>
-            </div>
-          </div>
 
-          {/* Photo upload + Close Friends toggle */}
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border text-xs font-medium hover:bg-accent transition-colors"
-              data-ocid="story.create.upload_button"
-            >
-              <Camera size={14} className="text-primary" />📷 Add Photo
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={onMediaSelect}
-            />
-            {mediaFile && (
-              <button
-                type="button"
-                onClick={() => {}}
-                className="text-xs text-destructive hover:underline"
-              >
-                Remove photo
-              </button>
-            )}
-            <div className="flex items-center gap-2 cursor-pointer ml-auto">
-              <span className="text-xs text-muted-foreground whitespace-nowrap">
-                Close Friends
-              </span>
-              <div
-                role="switch"
-                aria-checked={isCloseFriends}
-                onClick={() => onCloseFriendsChange(!isCloseFriends)}
-                onKeyDown={(e) =>
-                  e.key === "Enter" && onCloseFriendsChange(!isCloseFriends)
-                }
-                tabIndex={0}
-                data-ocid="story.create.switch"
-                className={cn(
-                  "w-9 h-5 rounded-full transition-colors cursor-pointer relative flex-shrink-0",
-                  isCloseFriends ? "bg-primary" : "bg-border",
+              {/* Quick emoji row */}
+              <div>
+                <p className="text-xs text-muted-foreground mb-1.5 font-medium">
+                  Quick Emoji
+                </p>
+                <div className="flex gap-1.5 flex-wrap">
+                  {QUICK_EMOJIS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => onTextChange(text + emoji)}
+                      className="w-8 h-8 rounded-lg bg-muted hover:bg-accent text-lg flex items-center justify-center transition-colors"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Font style picker */}
+              <div>
+                <p className="text-xs text-muted-foreground mb-1.5 font-medium">
+                  Font Style
+                </p>
+                <div className="flex gap-1.5">
+                  {(["normal", "bold", "italic"] as const).map((style) => (
+                    <button
+                      key={style}
+                      type="button"
+                      onClick={() => setFontStyle(style)}
+                      className={cn(
+                        "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border flex-1",
+                        fontStyle === style
+                          ? "bg-primary text-white border-primary"
+                          : "bg-muted border-border text-muted-foreground hover:bg-accent",
+                      )}
+                      style={{
+                        fontWeight: style === "bold" ? 700 : 400,
+                        fontStyle: style === "italic" ? "italic" : "normal",
+                      }}
+                    >
+                      {style.charAt(0).toUpperCase() + style.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Text alignment */}
+              <div>
+                <p className="text-xs text-muted-foreground mb-1.5 font-medium">
+                  Text Alignment
+                </p>
+                <div className="flex gap-1.5">
+                  {(["left", "center", "right"] as const).map((align) => (
+                    <button
+                      key={align}
+                      type="button"
+                      onClick={() => setTextAlign(align)}
+                      className={cn(
+                        "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border flex-1",
+                        textAlign === align
+                          ? "bg-primary text-white border-primary"
+                          : "bg-muted border-border text-muted-foreground hover:bg-accent",
+                      )}
+                    >
+                      {align === "left" ? "⬅" : align === "center" ? "↔" : "➡"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Text color picker */}
+              <div>
+                <p className="text-xs text-muted-foreground mb-1.5 font-medium">
+                  Text Color
+                </p>
+                <div className="flex gap-2 flex-wrap">
+                  {TEXT_COLORS.map((c) => (
+                    <button
+                      key={c.value}
+                      type="button"
+                      title={c.label}
+                      onClick={() => setTextColor(c.value)}
+                      className={cn(
+                        "w-7 h-7 rounded-full transition-all border-2",
+                        textColor === c.value
+                          ? "ring-2 ring-primary ring-offset-2 ring-offset-card scale-110"
+                          : "border-transparent hover:scale-105",
+                      )}
+                      style={{
+                        background: c.value,
+                        borderColor: c.value === "#ffffff" ? "#ccc" : c.value,
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Background */}
+              <div>
+                <p className="text-xs text-muted-foreground mb-1.5 font-medium">
+                  Background
+                </p>
+                <div className="flex gap-2 flex-wrap">
+                  {STATUS_BG_COLORS.map((bg) => (
+                    <button
+                      key={bg.value}
+                      type="button"
+                      title={bg.label}
+                      onClick={() => onBgChange(bg.value)}
+                      className={cn(
+                        "w-8 h-8 rounded-full flex-shrink-0 transition-all",
+                        selectedBg === bg.value
+                          ? "ring-2 ring-white ring-offset-2 ring-offset-card scale-110"
+                          : "hover:scale-105",
+                      )}
+                      style={{ background: bg.value }}
+                    />
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Photo tab */}
+              <div className="flex flex-col items-center gap-3 py-4">
+                {mediaFile ? (
+                  <div className="relative w-full">
+                    <img
+                      src={mediaFile}
+                      alt="Selected story media"
+                      className="w-full rounded-xl object-cover max-h-48"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        /* handled by parent via onMediaSelect */
+                      }}
+                      className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center hover:bg-black/80"
+                    >
+                      <X size={12} className="text-white" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full h-32 rounded-2xl border-2 border-dashed border-border flex flex-col items-center justify-center gap-2 hover:border-primary/60 hover:bg-muted/30 transition-colors"
+                    data-ocid="story.create.upload_button"
+                  >
+                    <Camera size={24} className="text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground font-medium">
+                      Tap to add photo
+                    </span>
+                  </button>
                 )}
-              >
-                <div
-                  className={cn(
-                    "absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all",
-                    isCloseFriends ? "left-[18px]" : "left-0.5",
-                  )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={onMediaSelect}
                 />
               </div>
+
+              {/* Caption for photo */}
+              <textarea
+                className="w-full rounded-xl border border-border bg-muted/50 px-4 py-3 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-primary/40 transition-shadow"
+                placeholder="Add a caption..."
+                rows={2}
+                value={text}
+                onChange={(e) => onTextChange(e.target.value)}
+                maxLength={200}
+                data-ocid="story.create.textarea"
+              />
+            </>
+          )}
+
+          {/* Close Friends toggle — always visible */}
+          <div className="flex items-center justify-between px-1 py-1 rounded-xl bg-muted/30 border border-border/50">
+            <div className="flex items-center gap-2">
+              <span className="text-base">👁️</span>
+              <div>
+                <p className="text-xs font-medium">Close Friends Only</p>
+                <p className="text-[10px] text-muted-foreground">
+                  Only people you've chatted with
+                </p>
+              </div>
+            </div>
+            <div
+              role="switch"
+              aria-checked={isCloseFriends}
+              onClick={() => onCloseFriendsChange(!isCloseFriends)}
+              onKeyDown={(e) =>
+                e.key === "Enter" && onCloseFriendsChange(!isCloseFriends)
+              }
+              tabIndex={0}
+              data-ocid="story.create.switch"
+              className={cn(
+                "w-10 h-6 rounded-full transition-colors cursor-pointer relative flex-shrink-0",
+                isCloseFriends ? "bg-primary" : "bg-border",
+              )}
+            >
+              <div
+                className={cn(
+                  "absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all",
+                  isCloseFriends ? "left-5" : "left-1",
+                )}
+              />
             </div>
           </div>
 

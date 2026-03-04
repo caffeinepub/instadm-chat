@@ -973,3 +973,12 @@ html, body { overflow-x: hidden; max-width: 100vw; }
 @media (min-width: 1024px) {
   .chat-sidebar { width: 340px; }
 }
+
+/* ─── Reply bar slide-in animation ──────────────────────────── */
+@keyframes replyBarSlide {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.reply-bar-enter {
+  animation: replyBarSlide 0.2s ease-out;
+}

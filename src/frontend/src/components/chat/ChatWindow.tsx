@@ -118,6 +118,7 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
     messages: allMessages,
     users,
     sendMessage,
+    retryMessage,
     editMessage,
     deleteMessageForEveryone,
     deleteMessageForMe,
@@ -154,6 +155,7 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [loadingTimedOut, setLoadingTimedOut] = useState(false);
+  const [showProfilePopover, setShowProfilePopover] = useState(false);
   const [showPollModal, setShowPollModal] = useState(false);
   const [chatPolls, setChatPolls] = useState<Poll[]>([]);
   const [showMediaGallery, setShowMediaGallery] = useState(false);
@@ -239,6 +241,41 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
   const resolvedOtherUid = isPendingThisChat
     ? pendingChatContext!.otherUid
     : otherUid;
+
+  // ─── Live online status: track fresh profile for the other user ──────────
+  // We keep a separate state that gets refreshed every 30s so online/lastSeen
+  // is always up-to-date instead of stuck at the value from when chat was opened.
+  const [liveOtherProfile, setLiveOtherProfile] = useState<
+    import("../../types").AppUser | null
+  >(null);
+
+  useEffect(() => {
+    if (!actor || !resolvedOtherUid) return;
+
+    const fetchProfile = async () => {
+      try {
+        const profile = await actor.getUserProfile(
+          Principal.fromText(resolvedOtherUid),
+        );
+        if (profile) {
+          setLiveOtherProfile(backendProfileToAppUser(profile));
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    // Fetch immediately when chat opens
+    fetchProfile();
+
+    // Poll every 30s for fresh online/lastSeen
+    const interval = setInterval(fetchProfile, 30_000);
+    return () => clearInterval(interval);
+  }, [actor, resolvedOtherUid]);
+
+  // Merge live profile data with resolved user — liveOtherProfile takes precedence
+  // for online status and lastSeen, but we keep resolvedOtherUser for display data
+  const effectiveOtherUser = liveOtherProfile ?? resolvedOtherUser;
 
   // ─── Self-healing: fetch missing chat/user from backend ──────────────────
   const healingRef = useRef(false);
@@ -922,41 +959,104 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
           </Button>
         )}
 
-        <button
-          type="button"
-          className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0 hover:opacity-80 transition-opacity overflow-hidden"
-          onClick={() => {}}
-        >
-          <UserAvatar
-            src={resolvedOtherUser.profilePicture}
-            username={resolvedOtherUser.username}
-            isOnline={resolvedOtherUser.onlineStatus}
-            size="md"
-          />
-          <div className="flex-1 min-w-0 text-left">
-            <p className="font-semibold text-sm truncate tracking-tight">
-              @{resolvedOtherUser.username}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {isOtherTyping ? (
-                <span className="text-primary font-medium">typing...</span>
-              ) : resolvedOtherUser.onlineStatus ? (
-                <span className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-online-dot inline-block" />
-                  Active now
-                </span>
-              ) : shouldShowLastSeen(
-                  resolvedOtherUid,
-                  currentUid,
-                  currentUser?.following ?? [],
-                ) ? (
-                `Active ${formatLastSeen(resolvedOtherUser.lastSeen)}`
-              ) : (
-                <span className="text-muted-foreground/50">—</span>
-              )}
-            </p>
-          </div>
-        </button>
+        {/* Profile popover — click avatar/name to see mini profile card */}
+        <Popover open={showProfilePopover} onOpenChange={setShowProfilePopover}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0 hover:opacity-80 transition-opacity overflow-hidden"
+              data-ocid="chat.open_modal_button"
+            >
+              {(() => {
+                const isActuallyOnline =
+                  (effectiveOtherUser?.onlineStatus ?? false) &&
+                  Date.now() - (effectiveOtherUser?.lastSeen ?? 0) <
+                    2 * 60 * 1000;
+                return (
+                  <>
+                    <UserAvatar
+                      src={resolvedOtherUser.profilePicture}
+                      username={resolvedOtherUser.username}
+                      isOnline={isActuallyOnline}
+                      size="md"
+                    />
+                    <div className="flex-1 min-w-0 text-left">
+                      <p className="font-semibold text-sm truncate tracking-tight">
+                        @{resolvedOtherUser.username}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {isOtherTyping ? (
+                          <span className="text-primary font-medium">
+                            typing...
+                          </span>
+                        ) : isActuallyOnline ? (
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-online-dot inline-block" />
+                            Active now
+                          </span>
+                        ) : (effectiveOtherUser?.lastSeen ?? 0) > 0 &&
+                          shouldShowLastSeen(
+                            resolvedOtherUid,
+                            currentUid,
+                            currentUser?.following ?? [],
+                          ) ? (
+                          `Active ${formatLastSeen(effectiveOtherUser?.lastSeen ?? 0)}`
+                        ) : (
+                          <span className="text-muted-foreground/50">—</span>
+                        )}
+                      </p>
+                    </div>
+                  </>
+                );
+              })()}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent
+            align="start"
+            side="bottom"
+            sideOffset={4}
+            className="w-[220px] rounded-2xl p-4"
+          >
+            {(() => {
+              const isActuallyOnline =
+                (effectiveOtherUser?.onlineStatus ?? false) &&
+                Date.now() - (effectiveOtherUser?.lastSeen ?? 0) <
+                  2 * 60 * 1000;
+              return (
+                <div className="flex flex-col items-center gap-3 text-center">
+                  <UserAvatar
+                    src={resolvedOtherUser.profilePicture}
+                    username={resolvedOtherUser.username}
+                    isOnline={isActuallyOnline}
+                    size="lg"
+                  />
+                  <div>
+                    <p className="font-bold text-sm">
+                      @{resolvedOtherUser.username}
+                    </p>
+                    {resolvedOtherUser.fullName && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {resolvedOtherUser.fullName}
+                      </p>
+                    )}
+                    <p className="text-xs text-muted-foreground mt-1.5 flex items-center justify-center gap-1.5">
+                      {isActuallyOnline ? (
+                        <>
+                          <span className="w-1.5 h-1.5 rounded-full bg-online-dot inline-block" />
+                          Active now
+                        </>
+                      ) : (effectiveOtherUser?.lastSeen ?? 0) > 0 ? (
+                        `Active ${formatLastSeen(effectiveOtherUser?.lastSeen ?? 0)}`
+                      ) : (
+                        "Offline"
+                      )}
+                    </p>
+                  </div>
+                </div>
+              );
+            })()}
+          </PopoverContent>
+        </Popover>
 
         <div className="flex items-center gap-0.5 flex-shrink-0">
           <Button
@@ -1309,6 +1409,11 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
                         ? () => setReportingMessage(msg)
                         : undefined
                     }
+                    onRetry={
+                      msg.status === "failed"
+                        ? () => retryMessage(chatId, msg.id)
+                        : undefined
+                    }
                     isLastMessage={isLastSent}
                   />
                 </div>
@@ -1324,29 +1429,38 @@ export function ChatWindow({ chatId, onBack }: ChatWindowProps) {
 
       {/* Reply/Edit bar */}
       {(replyToMessage || editingMessage) && (
-        <div className="flex items-center gap-3 px-4 py-2 border-t border-border bg-muted/30">
+        <div className="flex items-center gap-3 px-4 py-2.5 border-t border-border bg-background/95 backdrop-blur-sm reply-bar-enter">
+          <div
+            className="w-1 h-10 rounded-full flex-shrink-0"
+            style={{ background: "linear-gradient(135deg, #e1306c, #833ab4)" }}
+          />
           <div className="flex-1 min-w-0">
-            <p className="text-xs text-primary font-medium">
+            <p
+              className="text-xs font-semibold mb-0.5"
+              style={{ color: "oklch(var(--primary))" }}
+            >
               {editingMessage
-                ? "Editing message"
-                : `Reply to @${users[replyToMessage!.senderId]?.username}`}
+                ? "✏️ Editing message"
+                : `↩ Replying to ${users[replyToMessage!.senderId]?.username ?? "..."}`}
             </p>
-            <p className="text-xs text-muted-foreground truncate">
-              {(editingMessage ?? replyToMessage)?.text}
+            <p className="text-xs text-muted-foreground truncate leading-snug">
+              {(editingMessage ?? replyToMessage)?.messageType !== "text"
+                ? `📎 ${(editingMessage ?? replyToMessage)?.messageType}`
+                : (editingMessage ?? replyToMessage)?.text?.slice(0, 80) ||
+                  "..."}
             </p>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="w-6 h-6"
+          <button
+            type="button"
             onClick={() => {
               setReplyToMessage(null);
               setEditingMessage(null);
               setInputText("");
             }}
+            className="w-7 h-7 rounded-full bg-muted hover:bg-accent flex items-center justify-center text-muted-foreground hover:text-foreground transition-all flex-shrink-0"
           >
-            ✕
-          </Button>
+            <X size={14} />
+          </button>
         </div>
       )}
 

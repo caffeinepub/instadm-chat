@@ -263,6 +263,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [identity, actor],
   );
 
+  // ─── Online status heartbeat + visibility + beforeunload ─────────────────
+
+  useEffect(() => {
+    if (!actor || !currentUser) return;
+
+    // Mark online immediately
+    actor.updateOnlineStatus(true).catch(() => {});
+
+    // Heartbeat every 60s while the tab is in the foreground
+    const heartbeat = setInterval(() => {
+      if (!document.hidden) {
+        actor.updateOnlineStatus(true).catch(() => {});
+      }
+    }, 60_000);
+
+    // Visibility change: tab hidden → offline, visible → online
+    const handleVisibility = () => {
+      if (document.hidden) {
+        actor.updateOnlineStatus(false).catch(() => {});
+      } else {
+        actor.updateOnlineStatus(true).catch(() => {});
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    // Tab close / navigate away → offline (fire-and-forget)
+    const handleUnload = () => {
+      actor.updateOnlineStatus(false).catch(() => {});
+    };
+    window.addEventListener("beforeunload", handleUnload);
+
+    return () => {
+      clearInterval(heartbeat);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("beforeunload", handleUnload);
+    };
+  }, [actor, currentUser]);
+
   const logout = useCallback(() => {
     if (currentUser) {
       saveUser({ ...currentUser, onlineStatus: false, lastSeen: Date.now() });

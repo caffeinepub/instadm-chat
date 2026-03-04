@@ -17,7 +17,6 @@ import {
   Bell,
   Bookmark,
   Bookmark as BookmarkIcon,
-  Camera,
   Compass,
   LogOut,
   MessageCircle,
@@ -109,7 +108,8 @@ export function HomePage() {
     setMobileChatOpen(false);
   };
 
-  // 6 core primary nav items for desktop + 5 for mobile bottom bar
+  // 5 core primary nav items for desktop + 5 for mobile bottom bar
+  // Stories are accessed via the StoryBar "+" button in the sidebar — no separate nav needed
   const primaryNavItems: NavItem[] = [
     {
       icon: <MessageCircle size={22} />,
@@ -117,12 +117,6 @@ export function HomePage() {
       action: () => {},
       isActive: true,
       badge: unreadCount > 0 ? unreadCount : undefined,
-    },
-    {
-      icon: <Camera size={22} />,
-      label: "Stories",
-      action: () => navigate({ to: "/status" }),
-      tooltip: "Stories — create & view stories",
     },
     {
       icon: <Compass size={22} />,
@@ -152,11 +146,6 @@ export function HomePage() {
       action: () => {},
       isActive: true,
       badge: unreadCount > 0 ? unreadCount : undefined,
-    },
-    {
-      icon: <Camera size={22} />,
-      label: "Stories",
-      action: () => navigate({ to: "/status" }),
     },
     {
       icon: <Compass size={22} />,

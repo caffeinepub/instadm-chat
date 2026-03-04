@@ -218,6 +218,7 @@ interface ChatContextType {
     type?: MessageType,
     extra?: Partial<Message>,
   ) => Promise<Message>;
+  retryMessage: (chatId: string, messageId: string) => Promise<void>;
   editMessage: (
     chatId: string,
     messageId: string,
@@ -614,17 +615,17 @@ export function ChatProvider({
     fetchChats().finally(() => setIsLoadingChats(false));
   }, [actor, isFetching, fetchChats]);
 
-  // ─── Poll chats list every 2000ms ────────────────────────────────────────
+  // ─── Poll chats list every 1500ms ────────────────────────────────────────
   // 500ms was too aggressive and caused race conditions with the messages poll.
-  // Messages poll at 150ms is fast enough for real-time feel; chats list only
-  // needs to update for sidebar ordering/last-message — 2s is fine.
+  // Messages poll at 100ms is fast enough for real-time feel; chats list
+  // needs to update for sidebar ordering/last-message — 1.5s is fast enough.
 
   useEffect(() => {
     if (!actor || isFetching) return;
 
     chatsPollRef.current = setInterval(() => {
       fetchChats();
-    }, 2000);
+    }, 1500);
 
     return () => {
       if (chatsPollRef.current) clearInterval(chatsPollRef.current);
@@ -643,16 +644,16 @@ export function ChatProvider({
     // Initial load of messages for active chat
     fetchMessages(activeChatId, 0n);
 
-    // Start polling for new messages — 150ms for active chat (near real-time)
+    // Start polling for new messages — 100ms for active chat (near real-time)
     messagesPollRef.current = setInterval(() => {
       const lastTs = lastMessageTimestampRef.current[activeChatId] ?? 0n;
       fetchMessages(activeChatId, lastTs);
-    }, 150);
+    }, 100);
 
-    // Full refresh every 800ms to catch any missed updates (seen, edits, reactions)
+    // Full refresh every 400ms to catch any missed updates (seen, edits, reactions)
     fullRefreshIntervalRef.current = setInterval(() => {
       fetchMessages(activeChatId, 0n);
-    }, 800);
+    }, 400);
 
     return () => {
       if (messagesPollRef.current) clearInterval(messagesPollRef.current);
@@ -735,6 +736,7 @@ export function ChatProvider({
         mediaName: extra?.mediaName,
         replyTo: extra?.replyTo,
         ...extra,
+        status: "pending",
       };
 
       setMessages((prev) => ({
@@ -806,15 +808,49 @@ export function ChatProvider({
 
         return realMsg;
       } catch (err) {
-        // Remove optimistic on failure
+        // Mark optimistic message as failed instead of removing it
         setMessages((prev) => ({
           ...prev,
-          [chatId]: (prev[chatId] ?? []).filter((m) => m.id !== optimisticId),
+          [chatId]: (prev[chatId] ?? []).map((m) =>
+            m.id === optimisticId ? { ...m, status: "failed" as const } : m,
+          ),
         }));
         throw err;
       }
     },
     [actor, chats, currentUid],
+  );
+
+  // ─── retryMessage ─────────────────────────────────────────────────────────
+
+  const retryMessage = useCallback(
+    async (chatId: string, messageId: string) => {
+      // Find the failed message
+      const chatMsgs = messagesRef.current[chatId] ?? [];
+      const failedMsg = chatMsgs.find((m) => m.id === messageId);
+      if (!failedMsg || failedMsg.status !== "failed") return;
+
+      // Remove the failed message
+      setMessages((prev) => ({
+        ...prev,
+        [chatId]: (prev[chatId] ?? []).filter((m) => m.id !== messageId),
+      }));
+
+      // Re-send
+      await sendMessage(
+        chatId,
+        failedMsg.senderId,
+        failedMsg.text,
+        failedMsg.messageType,
+        {
+          mediaUrl: failedMsg.mediaUrl,
+          mediaName: failedMsg.mediaName,
+          replyTo: failedMsg.replyTo,
+          mediaDuration: failedMsg.mediaDuration,
+        },
+      );
+    },
+    [sendMessage],
   );
 
   // ─── editMessage ──────────────────────────────────────────────────────────
@@ -834,8 +870,7 @@ export function ChatProvider({
       if (!actor) return;
       try {
         await actor.editMessage(chatId, messageId, newText);
-        // Refresh messages to confirm
-        setTimeout(() => fetchMessages(chatId, 0n), 500);
+        // Polling at 100ms will pick up the change — no need for a redundant timeout
       } catch {
         // Revert optimistic on failure
         fetchMessages(chatId, 0n);
@@ -859,8 +894,7 @@ export function ChatProvider({
       if (!actor) return;
       try {
         await actor.deleteMessageForEveryone(chatId, messageId);
-        // Refresh to confirm the delete propagated to all clients
-        setTimeout(() => fetchMessages(chatId, 0n), 500);
+        // Polling at 100ms will pick up the delete — no need for a redundant timeout
       } catch {
         fetchMessages(chatId, 0n);
       }
@@ -926,8 +960,7 @@ export function ChatProvider({
         } else {
           await actor.addReaction(chatId, messageId, emoji);
         }
-        // Always refresh after backend call to get canonical reaction state
-        setTimeout(() => fetchMessages(chatId, 0n), 300);
+        // Polling at 100ms will pick up the reaction change — no need for a redundant timeout
       } catch {
         // Revert
         fetchMessages(chatId, 0n);
@@ -1038,8 +1071,8 @@ export function ChatProvider({
         activeChatIdRef.current = chatId;
         setActiveChatIdState(chatId);
         lastMessageTimestampRef.current[chatId] = 0n;
-        // Fetch messages immediately
-        setTimeout(() => fetchMessages(chatId, 0n), 50);
+        // Fetch messages immediately (polling at 100ms will handle the rest)
+        fetchMessages(chatId, 0n);
 
         return { chatId, isRequest: false };
       } catch {
@@ -1079,7 +1112,7 @@ export function ChatProvider({
       try {
         await actor.markMessagesSeen(chatId);
         // Immediately refresh to propagate seenBy to other participants
-        setTimeout(() => fetchMessages(chatId, 0n), 200);
+        setTimeout(() => fetchMessages(chatId, 0n), 100);
       } catch {
         // Ignore
       }
@@ -1472,7 +1505,7 @@ export function ChatProvider({
     };
   }, [actor, isFetching, fetchGroupChats]);
 
-  // Poll active group messages every 200ms
+  // Poll active group messages every 150ms
   useEffect(() => {
     if (!actor || isFetching || !activeGroupChatId) return;
 
@@ -1482,7 +1515,7 @@ export function ChatProvider({
       const lastTs =
         lastMessageTimestampRef.current[`group_${activeGroupChatId}`] ?? 0n;
       fetchGroupMessages(activeGroupChatId, lastTs);
-    }, 200);
+    }, 150);
 
     return () => {
       if (groupMsgPollRef.current) clearInterval(groupMsgPollRef.current);
@@ -1954,6 +1987,7 @@ export function ChatProvider({
         leaveGroup,
         setGroupTyping,
         sendMessage,
+        retryMessage,
         editMessage,
         deleteMessageForEveryone,
         deleteMessageForMe,

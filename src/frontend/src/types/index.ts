@@ -45,6 +45,8 @@ export interface Message {
   deletedFor: string[]; // uids that deleted for themselves
   replyTo?: string; // messageId
   vanish: boolean;
+  /** Client-only send status. Undefined = successfully delivered (from backend). */
+  status?: "pending" | "sent" | "failed";
 }
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
